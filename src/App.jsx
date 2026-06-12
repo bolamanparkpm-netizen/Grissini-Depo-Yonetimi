@@ -29,7 +29,7 @@ export default function App() {
     <Routes>
       {/* Giriş sayfası */}
       <Route
-        path="/login"
+        path="/Login"
         element={user ? <Navigate to="/" replace /> : <Login />}
       />
 

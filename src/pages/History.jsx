@@ -10,12 +10,14 @@ const ACTION_LABELS = {
   consumed:    { label: 'Tüketim',  color: 'bg-gray-100 text-gray-600',    icon: '✅' },
 }
 
+// Filtrelenmiş batch için tüketim özeti
+const consumptionEvents = movements.filter(m => m.action === 'consumed')
 export default function History() {
   const [movements, setMovements] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [page, setPage] = useState(0)
-  const PAGE_SIZE = 20
+  const PAGE_SIZE = 20 
 
   useEffect(() => {
     fetchMovements()

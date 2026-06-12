@@ -23,20 +23,17 @@ export default function Production() {
       const qty = parseFloat(form.quantity_kg)
       if (isNaN(qty) || qty <= 0) throw new Error('Geçerli bir kg miktarı girin')
 
-      // 1. Supabase fonksiyonundan batch no al
-      const { data: batchNoData, error: fnError } = await supabase
-        .rpc('generate_batch_no', { p_date: form.production_date })
-      if (fnError) throw fnError
+      // 1. const batchNo = form.batch_no.trim().toUpperCase()
+      if (!batchNo) throw new Error('Batch numarası girin')
 
-      const batchNo = batchNoData
 
       // 2. Batch'i kaydet
       const { data: batch, error: insertError } = await supabase
         .from('batches')
         .insert({
-          batch_no: batchNo,
-          production_date: form.production_date,
-          quantity_kg: qty,
+          batch_no: " ,
+          production_date: new Date().toISOString().split('T')[0],
+          quantity_kg: " ,
           remaining_kg: qty,
           location: 'depo_a',
           status: 'in_stock',
@@ -83,16 +80,21 @@ export default function Production() {
           {/* Üretim tarihi */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Üretim Tarihi
+              Batch Numarası
             </label>
             <input
-              type="date"
-              value={form.production_date}
-              onChange={(e) => setForm({ ...form, production_date: e.target.value })}
+              type="text"
+              value={form.batch_no}
+              onChange={(e) => setForm({ ...form, production_date: e.target.valuetoUpperCase() })}
               className="w-full px-3 py-3 border border-gray-300 rounded-xl
-                         focus:outline-none focus:ring-2 focus:ring-amber-500 text-base"
-              required
-            />
+               focus:outline-none focus:ring-2 focus:ring-amber-500 text-base
+               font-mono uppercase"
+    	placeholder="GRS-20260612-001"
+   	required
+  	/>
+  	<p className="text-xs text-gray-400 mt-1">
+   	Aynı batch koduyla birden fazla paket girebilirsiniz
+ 	</p>
           </div>
 
           {/* Kg miktarı */}
@@ -150,7 +152,7 @@ export default function Production() {
 
         {/* Bilgi notu */}
         <p className="text-xs text-gray-400 mt-4 text-center">
-          Batch numarası otomatik oluşturulur (GRS-YYYYMMDD-XXX)
+           Aynı batch numarasıyla farklı zamanlarda paketleme girişi yapabilirsiniz
         </p>
       </div>
 
