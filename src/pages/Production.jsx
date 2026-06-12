@@ -6,6 +6,7 @@ import BarcodeLabel from '../components/BarcodeLabel'
 export default function Production() {
   const { user } = useAuth()
   const [form, setForm] = useState({
+    batch_no: '',
     production_date: new Date().toISOString().split('T')[0],
     quantity_kg: '',
   })
@@ -23,17 +24,16 @@ export default function Production() {
       const qty = parseFloat(form.quantity_kg)
       if (isNaN(qty) || qty <= 0) throw new Error('Geçerli bir kg miktarı girin')
 
-      // 1. const batchNo = form.batch_no.trim().toUpperCase()
+      const batchNo = form.batch_no.trim().toUpperCase()
       if (!batchNo) throw new Error('Batch numarası girin')
 
-
-      // 2. Batch'i kaydet
+      // Batch'i kaydet
       const { data: batch, error: insertError } = await supabase
         .from('batches')
         .insert({
-          batch_no: " ,
-          production_date: new Date().toISOString().split('T')[0],
-          quantity_kg: " ,
+          batch_no: batchNo,
+          production_date: form.production_date,
+          quantity_kg: qty,
           remaining_kg: qty,
           location: 'depo_a',
           status: 'in_stock',
@@ -43,7 +43,7 @@ export default function Production() {
 
       if (insertError) throw insertError
 
-      // 3. Hareket kaydı oluştur
+      // Hareket kaydı oluştur
       await supabase.from('movements').insert({
         batch_id: batch.id,
         action: 'produced',
@@ -54,12 +54,13 @@ export default function Production() {
         notes: `Üretim girişi — ${batchNo}`,
       })
 
-      // 4. Barkod göster
+      // Barkod göster
       setCreatedBatch(batch)
       setShowBarcode(true)
 
       // Form'u sıfırla
       setForm({
+        batch_no: '',
         production_date: new Date().toISOString().split('T')[0],
         quantity_kg: '',
       })
@@ -77,7 +78,8 @@ export default function Production() {
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Üretim tarihi */}
+
+          {/* Batch numarası */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Batch Numarası
@@ -85,16 +87,31 @@ export default function Production() {
             <input
               type="text"
               value={form.batch_no}
-              onChange={(e) => setForm({ ...form, production_date: e.target.valuetoUpperCase() })}
+              onChange={(e) => setForm({ ...form, batch_no: e.target.value.toUpperCase() })}
               className="w-full px-3 py-3 border border-gray-300 rounded-xl
-               focus:outline-none focus:ring-2 focus:ring-amber-500 text-base
-               font-mono uppercase"
-    	placeholder="GRS-20260612-001"
-   	required
-  	/>
-  	<p className="text-xs text-gray-400 mt-1">
-   	Aynı batch koduyla birden fazla paket girebilirsiniz
- 	</p>
+                         focus:outline-none focus:ring-2 focus:ring-amber-500 text-base
+                         font-mono uppercase"
+              placeholder="GRS-20260612-001"
+              required
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Aynı batch koduyla birden fazla paket girebilirsiniz
+            </p>
+          </div>
+
+          {/* Üretim tarihi */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Üretim Tarihi
+            </label>
+            <input
+              type="date"
+              value={form.production_date}
+              onChange={(e) => setForm({ ...form, production_date: e.target.value })}
+              className="w-full px-3 py-3 border border-gray-300 rounded-xl
+                         focus:outline-none focus:ring-2 focus:ring-amber-500 text-base"
+              required
+            />
           </div>
 
           {/* Kg miktarı */}
@@ -150,9 +167,8 @@ export default function Production() {
           </button>
         </form>
 
-        {/* Bilgi notu */}
         <p className="text-xs text-gray-400 mt-4 text-center">
-           Aynı batch numarasıyla farklı zamanlarda paketleme girişi yapabilirsiniz
+          Aynı batch numarasıyla farklı zamanlarda paketleme girişi yapabilirsiniz
         </p>
       </div>
 
@@ -168,4 +184,4 @@ export default function Production() {
       )}
     </div>
   )
-} 
+}

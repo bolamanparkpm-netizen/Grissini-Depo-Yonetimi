@@ -29,25 +29,6 @@ export default function Dashboard() {
   useEffect(() => {
     fetchStock()
 
-// Depo A'daki bekleyen stokları Excel'e aktar
-const handleExport = () => {
-  const columns = [
-    { key: 'batch_no', label: 'Batch No' },
-    { key: 'production_date', label: 'Üretim Tarihi' },
-    { key: 'quantity_kg', label: 'Üretilen (kg)' },
-    { key: 'remaining_kg', label: 'Kalan (kg)' },
-    { key: 'status', label: 'Durum' },
-  ]
-
-  const rows = depoA.map(b => ({
-    ...b,
-    production_date: formatDate(b.production_date),
-    status: b.status === 'in_stock' ? 'Stokta' : 'Satıldı (transfer bekliyor)',
-  }))
-
-  const today = new Date().toISOString().split('T')[0]
-  exportToCsv(`depo-a-stok-${today}.csv`, rows, columns)
-}
     // Realtime subscription — batches tablosundaki değişiklikleri dinle
     const channel = supabase
       .channel('dashboard-batches')
@@ -55,7 +36,6 @@ const handleExport = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'batches' },
         () => {
-          // Herhangi bir değişiklikte yeniden çek
           fetchStock()
         }
       )
@@ -65,6 +45,26 @@ const handleExport = () => {
       supabase.removeChannel(channel)
     }
   }, [])
+
+  // Depo A'daki bekleyen stokları Excel'e aktar
+  const handleExport = () => {
+    const columns = [
+      { key: 'batch_no', label: 'Batch No' },
+      { key: 'production_date', label: 'Üretim Tarihi' },
+      { key: 'quantity_kg', label: 'Üretilen (kg)' },
+      { key: 'remaining_kg', label: 'Kalan (kg)' },
+      { key: 'status', label: 'Durum' },
+    ]
+
+    const rows = depoA.map(b => ({
+      ...b,
+      production_date: formatDate(b.production_date),
+      status: b.status === 'in_stock' ? 'Stokta' : 'Satıldı (transfer bekliyor)',
+    }))
+
+    const today = new Date().toISOString().split('T')[0]
+    exportToCsv(`depo-a-stok-${today}.csv`, rows, columns)
+  }
 
   const totalA = depoA.reduce((sum, b) => sum + parseFloat(b.remaining_kg || 0), 0)
   const totalB = depoB.reduce((sum, b) => sum + parseFloat(b.remaining_kg || 0), 0)
@@ -79,18 +79,19 @@ const handleExport = () => {
   }
 
   return (
-   <div className="flex items-center justify-between mb-4">
-  <h2 className="text-xl font-bold text-gray-800">📊 Stok Durumu</h2>
-  <button
-    onClick={handleExport}
-    disabled={depoA.length === 0}
-    className="text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-300
-               text-white font-medium px-3 py-2 rounded-lg flex items-center gap-1.5
-               transition-colors"
-  >
-    📥 Excel'e Aktar
-  </button>
-</div>
+    <div className="p-4 max-w-2xl mx-auto">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold text-gray-800">📊 Stok Durumu</h2>
+        <button
+          onClick={handleExport}
+          disabled={depoA.length === 0}
+          className="text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-300
+                     text-white font-medium px-3 py-2 rounded-lg flex items-center gap-1.5
+                     transition-colors"
+        >
+          📥 Excel'e Aktar
+        </button>
+      </div>
 
       {/* Özet istatistikler */}
       <div className="grid grid-cols-2 gap-3 mb-6">
@@ -180,4 +181,4 @@ function StockCard({ title, batches, colorClass, emptyMsg }) {
       )}
     </div>
   )
-} 
+}

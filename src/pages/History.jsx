@@ -10,14 +10,12 @@ const ACTION_LABELS = {
   consumed:    { label: 'Tüketim',  color: 'bg-gray-100 text-gray-600',    icon: '✅' },
 }
 
-// Filtrelenmiş batch için tüketim özeti
-const consumptionEvents = movements.filter(m => m.action === 'consumed')
 export default function History() {
   const [movements, setMovements] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [page, setPage] = useState(0)
-  const PAGE_SIZE = 20 
+  const PAGE_SIZE = 20
 
   useEffect(() => {
     fetchMovements()
@@ -35,7 +33,6 @@ export default function History() {
       .order('created_at', { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
-    // Batch no filtresi
     if (filter.trim()) {
       query = query.ilike('batches.batch_no', `%${filter.trim()}%`)
     }
@@ -45,7 +42,6 @@ export default function History() {
     if (error) {
       console.error('Geçmiş yükleme hatası:', error)
     } else {
-      // Filtre sonuçlarını istemci tarafında da uygula (join filtresi için)
       const filtered = filter.trim()
         ? data.filter(m => m.batches?.batch_no?.includes(filter.trim().toUpperCase()))
         : data
@@ -58,6 +54,9 @@ export default function History() {
     setFilter(e.target.value.toUpperCase())
     setPage(0)
   }
+
+  // Filtrelenmiş batch için tüketim özeti (geri çağırma izlenebilirliği)
+  const consumptionEvents = movements.filter(m => m.action === 'consumed')
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
@@ -75,6 +74,23 @@ export default function History() {
                      font-mono"
         />
       </div>
+
+      {/* Tüketim özet kutusu — geri çağırma için */}
+      {filter && consumptionEvents.length > 0 && (
+        <div className="bg-gray-900 text-white rounded-xl p-4 mb-4">
+          <p className="text-sm font-semibold mb-2">
+            🔍 {filter} — Tüketim Kayıtları (Geri Çağırma için)
+          </p>
+          {consumptionEvents.map(m => (
+            <p key={m.id} className="text-xs text-gray-300">
+              • {new Date(m.created_at).toLocaleString('tr-TR', {
+                  day: '2-digit', month: 'short', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit'
+                })} — {m.quantity_kg} kg — {m.performed_by}
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* Yükleniyor */}
       {loading && (
@@ -125,7 +141,6 @@ export default function History() {
                           {movement.batches?.batch_no || '—'}
                         </span>
                       </div>
-                      {/* Rota */}
                       <p className="text-xs text-gray-400 mt-1">
                         {movement.from_location
                           ? `${movement.from_location} → ${movement.to_location}`
@@ -133,20 +148,17 @@ export default function History() {
                         }
                         {movement.quantity_kg && ` · ${movement.quantity_kg} kg`}
                       </p>
-                      {/* Not */}
                       {movement.notes && (
                         <p className="text-xs text-gray-400 mt-0.5 truncate">
                           {movement.notes}
                         </p>
                       )}
-                      {/* Kim yaptı */}
                       <p className="text-xs text-gray-300 mt-0.5">
                         {movement.performed_by}
                       </p>
                     </div>
                   </div>
 
-                  {/* Tarih & saat */}
                   <div className="text-right flex-shrink-0">
                     <p className="text-xs text-gray-500">
                       {new Date(movement.created_at).toLocaleDateString('tr-TR')}
@@ -190,4 +202,4 @@ export default function History() {
       )}
     </div>
   )
-} 
+}
