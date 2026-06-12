@@ -163,17 +163,31 @@ function StockCard({ title, batches, colorClass, emptyMsg }) {
                     {formatDate(batch.production_date)}
                   </p>
                 </div>
+                
+                {/* Güncellenen text-right alanı */}
                 <div className="text-right">
                   <p className="font-bold text-gray-800">
                     {parseFloat(batch.remaining_kg).toFixed(1)} kg
                   </p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${c.badge}`}>
-                    {batch.remaining_kg < batch.quantity_kg
-                      ? `${batch.quantity_kg} kg'dan`
-                      : 'Tam dolu'
-                    }
-                  </span>
+                  <div className="flex gap-1 justify-end mt-0.5">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${c.badge}`}>
+                      {batch.remaining_kg < batch.quantity_kg
+                        ? `${batch.quantity_kg} kg'dan`
+                        : 'Tam dolu'
+                      }
+                    </span>
+                    {batch.quality_status !== 'approved' && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full
+                        ${batch.quality_status === 'pending' ? 'bg-gray-100 text-gray-600' :
+                          batch.quality_status === 'quarantine' ? 'bg-orange-100 text-orange-700' :
+                          'bg-red-100 text-red-700'}`}>
+                        {batch.quality_status === 'pending' ? '⏳ Bekliyor' :
+                         batch.quality_status === 'quarantine' ? '🔬 Karantina' : '❌ Red'}
+                      </span>
+                    )}
+                  </div>
                 </div>
+
               </div>
             </div>
           ))}

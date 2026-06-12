@@ -37,6 +37,7 @@ export default function Production() {
           remaining_kg: qty,
           location: 'depo_a',
           status: 'in_stock',
+	  quality_status: 'pending',   // ← Kalite onayı bekliyor
         })
         .select()
         .single()

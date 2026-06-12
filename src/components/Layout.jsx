@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 const navItems = [
   { to: '/',           icon: '📊', label: 'Genel Bakış' },
   { to: '/production', icon: '🏭', label: 'Üretim' },
+  { to: '/quality',    icon: '🧪', label: 'Kalite' },
   { to: '/sales',      icon: '🚚', label: 'Satış & Sevk' },
   { to: '/consumption',icon: '✅', label: 'Tüketim' },
   { to: '/history',    icon: '📋', label: 'Geçmiş' },

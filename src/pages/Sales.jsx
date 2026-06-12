@@ -34,6 +34,7 @@ export default function Sales() {
       .select('*')
       .eq('location', 'depo_a')
       .eq('status', 'in_stock')
+      .eq('quality_status', 'approved')   // ← Sadece kalite onaylı
       .order('production_date', { ascending: false })
       .then(({ data }) => setBatches(data || []))
   }, [])
