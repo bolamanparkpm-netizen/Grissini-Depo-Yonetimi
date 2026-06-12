@@ -181,7 +181,7 @@ function StockCard({ title, batches, colorClass, emptyMsg }) {
                         ${batch.quality_status === 'pending' ? 'bg-gray-100 text-gray-600' :
                           batch.quality_status === 'quarantine' ? 'bg-orange-100 text-orange-700' :
                           'bg-red-100 text-red-700'}`}>
-                        {batch.quality_status === 'pending' ? '⏳ Bekliyor' :
+                        {batch.quality_status === 'pending' ? '⏳ Kalite Onayı Bekliyor' :
                          batch.quality_status === 'quarantine' ? '🔬 Karantina' : '❌ Red'}
                       </span>
                     )}
