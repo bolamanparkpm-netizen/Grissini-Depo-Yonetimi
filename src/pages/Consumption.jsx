@@ -8,8 +8,23 @@ export default function Consumption() {
   const [scanning, setScanning] = useState(false)
   const [result, setResult] = useState(null) // { success, message, batch }
   const [loading, setLoading] = useState(false)
+  const { user, profile, canEdit } = useAuth()
+  const { log } = useAudit()
 
-  const handleScan = async (scannedCode) => {
+// İşlem sonrası:
+await log({
+  userId:    user.id,
+  userEmail: user.email,
+  action:    'Satış emri oluşturuldu',
+  tableName: 'sales_orders',
+  recordId:  order.id,
+  newValues: { batch_id: form.batch_id, sold_kg: soldKg, customer: form.customer },
+})
+  <RoleGuard allowed={canEdit('warehouse')}>
+  ...
+ </RoleGuard>
+
+    const handleScan = async (scannedCode) => {
     setScanning(false)
     setLoading(true)
     setResult(null)

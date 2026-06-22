@@ -5,6 +5,23 @@ import BarcodeScanner from '../components/BarcodeScanner'
 import { formatDate } from '../utils/batchUtils'
 import HardwareScannerInput from '../components/HardwareScannerInput'
 
+const { user, profile, canEdit } = useAuth()
+const { log } = useAudit()
+
+// İşlem sonrası:
+await log({
+  userId:    user.id,
+  userEmail: user.email,
+  action:    'Satış emri oluşturuldu',
+  tableName: 'sales_orders',
+  recordId:  order.id,
+  newValues: { batch_id: form.batch_id, sold_kg: soldKg, customer: form.customer },
+})
+
+<RoleGuard allowed={canEdit('warehouse')}>
+  ...
+</RoleGuard>
+
 // Adım durumları
 const STEP = {
   ORDER: 'order',       // Satış emri formu

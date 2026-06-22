@@ -2,6 +2,14 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { formatDate } from '../utils/batchUtils'
+import { useAudit } from '../hooks/useAudit'
+import RoleGuard from '../components/RoleGuard'
+
+<RoleGuard allowed={canEdit('quality')}>
+  <div className="grid grid-cols-3 gap-2">
+    ...butonlar...
+  </div>
+</RoleGuard>
 
 // Kalite durumu tanımları
 const QUALITY_LABELS = {
@@ -48,7 +56,19 @@ export default function Quality() {
     setActingId(batch.id)
     try {
       const note = noteDrafts[batch.id] || ''
+// component içinde:
+const { log } = useAudit()
 
+// handleSetStatus içinde güncelleme sonrası:
+await log({
+  userId:    user.id,
+  userEmail: user.email,
+  action:    `Kalite durumu güncellendi: ${newStatus}`,
+  tableName: 'batches',
+  recordId:  batch.id,
+  oldValues: { quality_status: batch.quality_status },
+  newValues: { quality_status: newStatus, quality_notes: note },
+})
       const { error: updateError } = await supabase
         .from('batches')
         .update({

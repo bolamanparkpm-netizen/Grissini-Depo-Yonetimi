@@ -2,6 +2,12 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import BarcodeLabel from '../components/BarcodeLabel'
+import { useAudit } from '../hooks/useAudit'
+import RoleGuard from '../components/RoleGuard'
+
+export default function Production() {
+  const { user, profile, canEdit } = useAuth()
+  const { log } = useAudit()
 
 export default function Production() {
   const { user } = useAuth()
@@ -84,6 +90,12 @@ export default function Production() {
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Batch Numarası
             </label>
+// return içinde <form> öncesine:
+<RoleGuard allowed={canEdit('production')}>
+  <form onSubmit={handleSubmit} ...>
+    ...
+  </form>
+</RoleGuard>
             <input
               type="text"
               value={form.batch_no}
@@ -100,6 +112,15 @@ export default function Production() {
           </div>
 
           {/* Üretim tarihi */}
+		// Audit log
+		await log({
+		userId:    user.id,
+		userEmail: user.email,
+ 		action:    'Üretim girişi yapıldı',
+		tableName: 'batches',
+		recordId:  batch.id,
+		newValues: { batch_no: batchNo, quantity_kg: qty, shift: form.shift },
+	})
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Üretim Tarihi

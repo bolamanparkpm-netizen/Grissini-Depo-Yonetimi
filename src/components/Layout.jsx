@@ -1,5 +1,27 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../hooks/useAuth'
+
+export default function Layout() {
+  const { user, profile, signOut } = useAuth()
+
+  const allNavItems = [
+    { to: '/',             icon: '📊', label: 'Genel Bakış', roles: null },
+    { to: '/production',   icon: '🏭', label: 'Üretim',      roles: null },
+    { to: '/quality',      icon: '🧪', label: 'Kalite',      roles: null },
+    { to: '/sales',        icon: '🚚', label: 'Satış & Sevk',roles: null },
+    { to: '/consumption',  icon: '✅', label: 'Tüketim',     roles: null },
+    { to: '/shift-report', icon: '📈', label: 'Vardiya',     roles: null },
+    { to: '/history',      icon: '📋', label: 'Geçmiş',      roles: null },
+    { to: '/admin',        icon: '⚙️', label: 'Yönetim',    roles: ['admin', 'mudur'] },
+  ]
+
+  // Admin/müdür değilse Yönetim sekmesini gizle
+  const navItems = allNavItems.filter(item =>
+    !item.roles || item.roles.includes(profile?.role)
+  )
+
+  // ... geri kalanı aynı
 
 // Navigasyon menüsü tanımları
 const navItems = [
