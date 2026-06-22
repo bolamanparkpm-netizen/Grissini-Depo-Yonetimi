@@ -9,6 +9,10 @@ import Sales from './pages/Sales'
 import Consumption from './pages/Consumption'
 import History from './pages/History'
 import Quality from './pages/Quality'
+import ShiftReport from './pages/ShiftReport'
+
+// ...
+<Route path="shift-report" element={<ShiftReport />} />
 
 export default function App() {
   const { user, loading } = useAuth()

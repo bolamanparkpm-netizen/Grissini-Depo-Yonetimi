@@ -9,6 +9,7 @@ const navItems = [
   { to: '/sales',      icon: '🚚', label: 'Satış & Sevk' },
   { to: '/consumption',icon: '✅', label: 'Tüketim' },
   { to: '/history',    icon: '📋', label: 'Geçmiş' },
+  { to: '/shift-report', icon: '📈', label: 'Vardiya' },
 ]
 
 export default function Layout() {

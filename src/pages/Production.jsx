@@ -9,6 +9,7 @@ export default function Production() {
     batch_no: '',
     production_date: new Date().toISOString().split('T')[0],
     quantity_kg: '',
+    shift: 'sabah',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -27,7 +28,6 @@ export default function Production() {
       const batchNo = form.batch_no.trim().toUpperCase()
       if (!batchNo) throw new Error('Batch numarası girin')
 
-      // Batch'i kaydet
       const { data: batch, error: insertError } = await supabase
         .from('batches')
         .insert({
@@ -37,14 +37,14 @@ export default function Production() {
           remaining_kg: qty,
           location: 'depo_a',
           status: 'in_stock',
-	  quality_status: 'pending',   // ← Kalite onayı bekliyor
+          quality_status: 'pending',
+          shift: form.shift,
         })
         .select()
         .single()
 
       if (insertError) throw insertError
 
-      // Hareket kaydı oluştur
       await supabase.from('movements').insert({
         batch_id: batch.id,
         action: 'produced',
@@ -52,18 +52,17 @@ export default function Production() {
         to_location: 'depo_a',
         quantity_kg: qty,
         performed_by: user?.email || 'sistem',
-        notes: `Üretim girişi — ${batchNo}`,
+        notes: `Üretim girişi — ${batchNo} — ${form.shift} vardiyası`,
       })
 
-      // Barkod göster
       setCreatedBatch(batch)
       setShowBarcode(true)
 
-      // Form'u sıfırla
       setForm({
         batch_no: '',
         production_date: new Date().toISOString().split('T')[0],
         quantity_kg: '',
+        shift: 'sabah',
       })
     } catch (err) {
       console.error('Üretim kayıt hatası:', err)
@@ -115,6 +114,32 @@ export default function Production() {
             />
           </div>
 
+          {/* Vardiya seçimi */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Vardiya
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: 'sabah', label: '🌅 Sabah' },
+                { value: 'aksam', label: '🌆 Akşam' },
+                { value: 'gece',  label: '🌙 Gece' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, shift: opt.value })}
+                  className={`py-3 rounded-xl text-sm font-medium transition-colors
+                    ${form.shift === opt.value
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Kg miktarı */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -133,28 +158,22 @@ export default function Production() {
                 required
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2
-                               text-gray-400 text-sm font-medium">
-                kg
-              </span>
+                               text-gray-400 text-sm font-medium">kg</span>
             </div>
           </div>
 
-          {/* Hata mesajı */}
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3
                             text-sm text-red-700 flex items-start gap-2">
-              <span className="text-base">⚠️</span>
-              <span>{error}</span>
+              <span>⚠️</span><span>{error}</span>
             </div>
           )}
 
-          {/* Kaydet butonu */}
           <button
             type="submit"
             disabled={loading}
             className="w-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300
-                       text-white font-semibold py-3.5 rounded-xl transition-colors
-                       text-base active:scale-95"
+                       text-white font-semibold py-3.5 rounded-xl transition-colors text-base"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
@@ -162,25 +181,15 @@ export default function Production() {
                                  rounded-full animate-spin" />
                 Kaydediliyor...
               </span>
-            ) : (
-              '💾 Kaydet & Barkod Oluştur'
-            )}
+            ) : '💾 Kaydet & Barkod Oluştur'}
           </button>
         </form>
-
-        <p className="text-xs text-gray-400 mt-4 text-center">
-          Aynı batch numarasıyla farklı zamanlarda paketleme girişi yapabilirsiniz
-        </p>
       </div>
 
-      {/* Barkod modal */}
       {showBarcode && createdBatch && (
         <BarcodeLabel
           batch={createdBatch}
-          onClose={() => {
-            setShowBarcode(false)
-            setCreatedBatch(null)
-          }}
+          onClose={() => { setShowBarcode(false); setCreatedBatch(null) }}
         />
       )}
     </div>
