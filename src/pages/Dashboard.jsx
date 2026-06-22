@@ -6,14 +6,14 @@ import { exportToCsv } from '../utils/exportCsv'
 export default function Dashboard() {
   const [depoA, setDepoA] = useState([])
   const [depoB, setDepoB] = useState([])
+  const [karantina, setKarantina] = useState([])
   const [loading, setLoading] = useState(true)
 
-  // Stok verilerini çek
   const fetchStock = async () => {
     const { data, error } = await supabase
       .from('batches')
       .select('*')
-      .in('status', ['in_stock', 'transferred'])
+      .not('status', 'eq', 'consumed')
       .order('production_date', { ascending: false })
 
     if (error) {
@@ -21,53 +21,69 @@ export default function Dashboard() {
       return
     }
 
-    setDepoA(data.filter(b => b.location === 'depo_a'))
-    setDepoB(data.filter(b => b.location === 'depo_b'))
+    // Depo A — kalite onaylı stoklar
+    setDepoA(data.filter(b =>
+      b.location === 'depo_a' &&
+      ['in_stock', 'sold'].includes(b.status)
+    ))
+
+    // Depo B — transfer edilmiş stoklar
+    setDepoB(data.filter(b =>
+      b.location === 'depo_b' &&
+      b.status === 'transferred'
+    ))
+
+    // Karantina — konumu fark etmeksizin kalite durumu karantina olanlar
+    setKarantina(data.filter(b =>
+      b.quality_status === 'quarantine'
+    ))
+
     setLoading(false)
   }
 
   useEffect(() => {
     fetchStock()
 
-    // Realtime subscription — batches tablosundaki değişiklikleri dinle
     const channel = supabase
       .channel('dashboard-batches')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'batches' },
-        () => {
-          fetchStock()
-        }
+        () => { fetchStock() }
       )
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
-  // Depo A'daki bekleyen stokları Excel'e aktar
+  // Excel export — Depo A
   const handleExport = () => {
     const columns = [
-      { key: 'batch_no', label: 'Batch No' },
+      { key: 'batch_no',        label: 'Batch No' },
       { key: 'production_date', label: 'Üretim Tarihi' },
-      { key: 'quantity_kg', label: 'Üretilen (kg)' },
-      { key: 'remaining_kg', label: 'Kalan (kg)' },
-      { key: 'status', label: 'Durum' },
+      { key: 'quantity_kg',     label: 'Üretilen (kg)' },
+      { key: 'remaining_kg',    label: 'Kalan (kg)' },
+      { key: 'quality_status',  label: 'Kalite Durumu' },
+      { key: 'status',          label: 'Stok Durumu' },
     ]
 
     const rows = depoA.map(b => ({
       ...b,
       production_date: formatDate(b.production_date),
-      status: b.status === 'in_stock' ? 'Stokta' : 'Satıldı (transfer bekliyor)',
+      quality_status:
+        b.quality_status === 'approved'   ? 'Onaylı' :
+        b.quality_status === 'pending'    ? 'Bekliyor' :
+        b.quality_status === 'quarantine' ? 'Karantina' : 'Red',
+      status: b.status === 'in_stock' ? 'Stokta' : 'Satış Emri Var',
     }))
 
     const today = new Date().toISOString().split('T')[0]
     exportToCsv(`depo-a-stok-${today}.csv`, rows, columns)
   }
 
-  const totalA = depoA.reduce((sum, b) => sum + parseFloat(b.remaining_kg || 0), 0)
-  const totalB = depoB.reduce((sum, b) => sum + parseFloat(b.remaining_kg || 0), 0)
+  const totalA        = depoA.reduce((s, b) => s + parseFloat(b.remaining_kg || 0), 0)
+  const totalB        = depoB.reduce((s, b) => s + parseFloat(b.remaining_kg || 0), 0)
+  const totalKarantina = karantina.reduce((s, b) => s + parseFloat(b.remaining_kg || 0), 0)
 
   if (loading) {
     return (
@@ -80,6 +96,8 @@ export default function Dashboard() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
+
+      {/* Başlık + Export */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold text-gray-800">📊 Stok Durumu</h2>
         <button
@@ -93,17 +111,22 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Özet istatistikler */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <p className="text-xs text-amber-700 font-medium mb-1">Toplam Depo A</p>
-          <p className="text-2xl font-bold text-amber-900">{totalA.toFixed(1)} kg</p>
-          <p className="text-xs text-amber-600 mt-1">{depoA.length} parti</p>
+      {/* Özet kartlar — 3 kolon */}
+      <div className="grid grid-cols-3 gap-2 mb-6">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+          <p className="text-xs text-amber-700 font-medium mb-1">🏭 Depo A</p>
+          <p className="text-xl font-bold text-amber-900">{totalA.toFixed(1)} kg</p>
+          <p className="text-xs text-amber-600 mt-0.5">{depoA.length} parti</p>
         </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <p className="text-xs text-blue-700 font-medium mb-1">Toplam Depo B</p>
-          <p className="text-2xl font-bold text-blue-900">{totalB.toFixed(1)} kg</p>
-          <p className="text-xs text-blue-600 mt-1">{depoB.length} parti</p>
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+          <p className="text-xs text-blue-700 font-medium mb-1">🏪 Depo B</p>
+          <p className="text-xl font-bold text-blue-900">{totalB.toFixed(1)} kg</p>
+          <p className="text-xs text-blue-600 mt-0.5">{depoB.length} parti</p>
+        </div>
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+          <p className="text-xs text-orange-700 font-medium mb-1">🔬 Karantina</p>
+          <p className="text-xl font-bold text-orange-900">{totalKarantina.toFixed(1)} kg</p>
+          <p className="text-xs text-orange-600 mt-0.5">{karantina.length} parti</p>
         </div>
       </div>
 
@@ -113,6 +136,7 @@ export default function Dashboard() {
         batches={depoA}
         colorClass="amber"
         emptyMsg="Depo A'da stok yok"
+        showQuality
       />
 
       {/* Depo B Kartı */}
@@ -122,22 +146,39 @@ export default function Dashboard() {
         colorClass="blue"
         emptyMsg="Depo B'de stok yok"
       />
+
+      {/* Karantina Kartı */}
+      {karantina.length > 0 && (
+        <StockCard
+          title="🔬 Karantina — Analiz Bekliyor"
+          batches={karantina}
+          colorClass="orange"
+          emptyMsg=""
+          showLocation
+        />
+      )}
+
     </div>
   )
 }
 
-// Stok kartı alt bileşeni
-function StockCard({ title, batches, colorClass, emptyMsg }) {
+// Stok kartı
+function StockCard({ title, batches, colorClass, emptyMsg, showQuality, showLocation }) {
   const colors = {
     amber: {
       header: 'bg-amber-600 text-white',
-      row: 'hover:bg-amber-50',
-      badge: 'bg-amber-100 text-amber-800',
+      row:    'hover:bg-amber-50',
+      badge:  'bg-amber-100 text-amber-800',
     },
     blue: {
       header: 'bg-blue-600 text-white',
-      row: 'hover:bg-blue-50',
-      badge: 'bg-blue-100 text-blue-800',
+      row:    'hover:bg-blue-50',
+      badge:  'bg-blue-100 text-blue-800',
+    },
+    orange: {
+      header: 'bg-orange-500 text-white',
+      row:    'hover:bg-orange-50',
+      badge:  'bg-orange-100 text-orange-800',
     },
   }
   const c = colors[colorClass]
@@ -161,33 +202,37 @@ function StockCard({ title, batches, colorClass, emptyMsg }) {
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {formatDate(batch.production_date)}
+                    {showLocation && (
+                      <span className="ml-2 text-orange-600">
+                        {batch.location === 'depo_a' ? '· Depo A' : '· Depo B'}
+                      </span>
+                    )}
                   </p>
                 </div>
-                
-                {/* Güncellenen text-right alanı */}
                 <div className="text-right">
                   <p className="font-bold text-gray-800">
                     {parseFloat(batch.remaining_kg).toFixed(1)} kg
                   </p>
-                  <div className="flex gap-1 justify-end mt-0.5">
+                  <div className="flex gap-1 justify-end mt-0.5 flex-wrap">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${c.badge}`}>
                       {batch.remaining_kg < batch.quantity_kg
-                        ? `${batch.quantity_kg} kg'dan`
-                        : 'Tam dolu'
-                      }
+                        ? `/ ${batch.quantity_kg} kg`
+                        : 'Tam dolu'}
                     </span>
-                    {batch.quality_status !== 'approved' && (
+                    {/* Kalite durumu rozeti — Depo A için */}
+                    {showQuality && batch.quality_status !== 'approved' && (
                       <span className={`text-xs px-2 py-0.5 rounded-full
-                        ${batch.quality_status === 'pending' ? 'bg-gray-100 text-gray-600' :
-                          batch.quality_status === 'quarantine' ? 'bg-orange-100 text-orange-700' :
-                          'bg-red-100 text-red-700'}`}>
-                        {batch.quality_status === 'pending' ? '⏳ Kalite Onayı Bekliyor' :
-                         batch.quality_status === 'quarantine' ? '🔬 Karantina' : '❌ Red'}
+                        ${batch.quality_status === 'pending'
+                          ? 'bg-gray-100 text-gray-600'
+                          : batch.quality_status === 'quarantine'
+                          ? 'bg-orange-100 text-orange-700'
+                          : 'bg-red-100 text-red-700'}`}>
+                        {batch.quality_status === 'pending'    ? '⏳' :
+                         batch.quality_status === 'quarantine' ? '🔬' : '❌'}
                       </span>
                     )}
                   </div>
                 </div>
-
               </div>
             </div>
           ))}
