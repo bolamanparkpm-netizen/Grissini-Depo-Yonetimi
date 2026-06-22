@@ -11,6 +11,7 @@ import History from './pages/History'
 import Quality from './pages/Quality'
 import ShiftReport from './pages/ShiftReport'
 import AdminPanel from './pages/AdminPanel'
+
 // ...
 <Route path="admin" element={<AdminPanel />} />
 

@@ -2,10 +2,22 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useAuth } from '../hooks/useAuth'
 
+// Navigasyon menüsü tanımları
+const navItems = [
+  { to: '/',           icon: '📊', label: 'Genel Bakış' },
+  { to: '/production', icon: '🏭', label: 'Üretim' },
+  { to: '/quality',    icon: '🧪', label: 'Kalite' },
+  { to: '/sales',      icon: '🚚', label: 'Satış & Sevk' },
+  { to: '/consumption',icon: '✅', label: 'Tüketim' },
+  { to: '/history',    icon: '📋', label: 'Geçmiş' },
+  { to: '/shift-report', icon: '📈', label: 'Vardiya' },
+]
+
 export default function Layout() {
   const { user, profile, signOut } = useAuth()
-
-  const allNavItems = [
+  const navigate = useNavigate()
+  
+const allNavItems = [
     { to: '/',             icon: '📊', label: 'Genel Bakış', roles: null },
     { to: '/production',   icon: '🏭', label: 'Üretim',      roles: null },
     { to: '/quality',      icon: '🧪', label: 'Kalite',      roles: null },
@@ -22,21 +34,6 @@ export default function Layout() {
   )
 
   // ... geri kalanı aynı
-
-// Navigasyon menüsü tanımları
-const navItems = [
-  { to: '/',           icon: '📊', label: 'Genel Bakış' },
-  { to: '/production', icon: '🏭', label: 'Üretim' },
-  { to: '/quality',    icon: '🧪', label: 'Kalite' },
-  { to: '/sales',      icon: '🚚', label: 'Satış & Sevk' },
-  { to: '/consumption',icon: '✅', label: 'Tüketim' },
-  { to: '/history',    icon: '📋', label: 'Geçmiş' },
-  { to: '/shift-report', icon: '📈', label: 'Vardiya' },
-]
-
-export default function Layout() {
-  const { user, signOut } = useAuth()
-  const navigate = useNavigate()
 
   const handleSignOut = async () => {
     await signOut()
