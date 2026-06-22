@@ -1,73 +1,54 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useAudit } from '../hooks/useAudit'
 import BarcodeScanner from '../components/BarcodeScanner'
+import HardwareScannerInput from '../components/HardwareScannerInput'
+import RoleGuard from '../components/RoleGuard'
 
 export default function Consumption() {
-  const { user } = useAuth()
-  const [scanning, setScanning] = useState(false)
-  const [result, setResult] = useState(null) // { success, message, batch }
-  const [loading, setLoading] = useState(false)
-  const { user, profile, canEdit } = useAuth()
+  const { user, canEdit } = useAuth()
   const { log } = useAudit()
+  const [scanning, setScanning] = useState(false)
+  const [result, setResult] = useState(null)
+  const [loading, setLoading] = useState(false)
 
-// İşlem sonrası:
-await log({
-  userId:    user.id,
-  userEmail: user.email,
-  action:    'Satış emri oluşturuldu',
-  tableName: 'sales_orders',
-  recordId:  order.id,
-  newValues: { batch_id: form.batch_id, sold_kg: soldKg, customer: form.customer },
-})
-  <RoleGuard allowed={canEdit('warehouse')}>
-  ...
- </RoleGuard>
-
-    const handleScan = async (scannedCode) => {
+  const handleScan = async (scannedCode) => {
     setScanning(false)
     setLoading(true)
     setResult(null)
-
     try {
-      // Barkod ile batch'i bul
       const { data: batch, error: fetchError } = await supabase
         .from('batches')
         .select('*')
         .eq('batch_no', scannedCode)
+        .eq('location', 'depo_b')
         .single()
 
       if (fetchError || !batch) {
-        setResult({
-          success: false,
-          message: `❌ Parti bulunamadı: ${scannedCode}`,
-        })
+        // Depo B'de değil mi diye kontrol et
+        const { data: anyBatch } = await supabase
+          .from('batches')
+          .select('location, status')
+          .eq('batch_no', scannedCode)
+          .single()
+
+        if (anyBatch?.status === 'consumed') {
+          setResult({ success: false, message: '❌ Bu parti zaten tüketilmiş.' })
+        } else if (anyBatch?.location === 'depo_a') {
+          setResult({ success: false, message: '❌ Bu parti henüz Depo A\'da, transfer edilmemiş.' })
+        } else {
+          setResult({ success: false, message: `❌ Parti bulunamadı: ${scannedCode}` })
+        }
         return
       }
 
-      // Depo B'de mi kontrol et
-      if (batch.location !== 'depo_b') {
-        const locationMsg = batch.location === 'consumed'
-          ? 'Bu parti zaten tüketilmiş.'
-          : `Bu parti Depo B'de değil (${batch.location === 'depo_a' ? 'Depo A' : batch.location}'da).`
-
-        setResult({ success: false, message: `❌ ${locationMsg}` })
-        return
-      }
-
-      // Batch'i tüketildi olarak işaretle
       const { error: updateError } = await supabase
         .from('batches')
-        .update({
-          status: 'consumed',
-          location: 'consumed',
-          remaining_kg: 0,
-        })
+        .update({ status: 'consumed', location: 'consumed', remaining_kg: 0 })
         .eq('id', batch.id)
-
       if (updateError) throw updateError
 
-      // Tüketim hareketi kaydet
       await supabase.from('movements').insert({
         batch_id: batch.id,
         action: 'consumed',
@@ -78,13 +59,17 @@ await log({
         notes: `Tüketim onayı — ${new Date().toLocaleString('tr-TR')}`,
       })
 
-      setResult({
-        success: true,
-        message: `✅ Tüketim onaylandı!`,
-        batch,
+      await log({
+        userId: user.id,
+        userEmail: user.email,
+        action: 'Tüketim kaydedildi',
+        tableName: 'batches',
+        recordId: batch.id,
+        oldValues: { status: 'transferred', location: 'depo_b' },
+        newValues: { status: 'consumed', location: 'consumed' },
       })
 
-      // Titreşim
+      setResult({ success: true, message: '✅ Tüketim onaylandı!', batch })
       if (navigator.vibrate) navigator.vibrate([100, 50, 100])
     } catch (err) {
       setResult({ success: false, message: `Hata: ${err.message}` })
@@ -93,10 +78,7 @@ await log({
     }
   }
 
-  const handleReset = () => {
-    setResult(null)
-    setScanning(false)
-  }
+  const handleReset = () => { setResult(null); setScanning(false) }
 
   return (
     <div className="p-4 max-w-md mx-auto">
@@ -105,13 +87,10 @@ await log({
         Depo B'deki partiyi tüketildi olarak işaretlemek için barkodu okutun.
       </p>
 
-      {/* Sonuç mesajı */}
       {result && (
         <div className={`rounded-xl p-5 mb-4 text-center
-          ${result.success
-            ? 'bg-green-50 border border-green-300'
-            : 'bg-red-50 border border-red-300'
-          }`}>
+          ${result.success ? 'bg-green-50 border border-green-300'
+                           : 'bg-red-50 border border-red-300'}`}>
           <p className={`font-semibold text-lg mb-1
             ${result.success ? 'text-green-700' : 'text-red-700'}`}>
             {result.success ? '✅ Tüketildi' : '❌ Hata'}
@@ -138,7 +117,6 @@ await log({
         </div>
       )}
 
-      {/* Yükleniyor */}
       {loading && (
         <div className="flex items-center justify-center py-8">
           <div className="w-10 h-10 border-4 border-green-500 border-t-transparent
@@ -146,21 +124,25 @@ await log({
         </div>
       )}
 
-      {/* Tara butonu */}
       {!result && !loading && (
-        <button
-          onClick={() => setScanning(true)}
-          className="w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold
-                     py-16 rounded-2xl flex flex-col items-center justify-center gap-3
-                     active:scale-95 transition-all"
-        >
-          <span className="text-5xl">📷</span>
-          <span className="text-base">Barkod Tara</span>
-          <span className="text-gray-400 text-xs">Depo B → Tüketildi</span>
-        </button>
+        <RoleGuard allowed={canEdit('warehouse')}>
+          <HardwareScannerInput onScan={handleScan} />
+          <button
+            onClick={() => setScanning(true)}
+            className="w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold
+                       py-16 rounded-2xl flex flex-col items-center justify-center gap-3
+                       active:scale-95 transition-all"
+          >
+            <span className="text-5xl">📷</span>
+            <span className="text-base">Barkod Tara</span>
+            <span className="text-gray-400 text-xs">Depo B → Tüketildi</span>
+          </button>
+          <p className="text-center text-xs text-gray-400 mt-2">
+            veya fiziksel barkod okuyucu ile direkt tarayın
+          </p>
+        </RoleGuard>
       )}
 
-      {/* Kamera ekranı */}
       {scanning && (
         <BarcodeScanner
           onScan={handleScan}
@@ -169,4 +151,4 @@ await log({
       )}
     </div>
   )
-} 
+}

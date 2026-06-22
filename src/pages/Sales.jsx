@@ -1,38 +1,23 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useAudit } from '../hooks/useAudit'
 import BarcodeScanner from '../components/BarcodeScanner'
-import { formatDate } from '../utils/batchUtils'
 import HardwareScannerInput from '../components/HardwareScannerInput'
+import RoleGuard from '../components/RoleGuard'
+import { formatDate } from '../utils/batchUtils'
 
-const { user, profile, canEdit } = useAuth()
-const { log } = useAudit()
-
-// İşlem sonrası:
-await log({
-  userId:    user.id,
-  userEmail: user.email,
-  action:    'Satış emri oluşturuldu',
-  tableName: 'sales_orders',
-  recordId:  order.id,
-  newValues: { batch_id: form.batch_id, sold_kg: soldKg, customer: form.customer },
-})
-
-<RoleGuard allowed={canEdit('warehouse')}>
-  ...
-</RoleGuard>
-
-// Adım durumları
 const STEP = {
-  ORDER: 'order',       // Satış emri formu
-  SCAN: 'scan',         // Barkod okuma
-  DONE: 'done',         // Tamamlandı
+  ORDER: 'order',
+  SCAN:  'scan',
+  DONE:  'done',
 }
 
 export default function Sales() {
-  const { user } = useAuth()
+  const { user, canEdit } = useAuth()
+  const { log } = useAudit()
   const [step, setStep] = useState(STEP.ORDER)
-  const [batches, setBatches] = useState([])  // Depo A'daki stoklar
+  const [batches, setBatches] = useState([])
   const [form, setForm] = useState({
     batch_id: '',
     sold_kg: '',
@@ -40,39 +25,36 @@ export default function Sales() {
     sale_date: new Date().toISOString().split('T')[0],
   })
   const [savedOrder, setSavedOrder] = useState(null)
-  const [scanResult, setScanResult] = useState(null) // { success, message, batch }
+  const [scanResult, setScanResult] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Depo A'daki stokları yükle
-  useEffect(() => {
+  const loadBatches = () => {
     supabase
       .from('batches')
       .select('*')
       .eq('location', 'depo_a')
       .eq('status', 'in_stock')
-      .eq('quality_status', 'approved')   // ← Sadece kalite onaylı
+      .eq('quality_status', 'approved')
       .order('production_date', { ascending: false })
       .then(({ data }) => setBatches(data || []))
-  }, [])
+  }
 
-  // Adım 1: Satış emrini kaydet
+  useEffect(() => { loadBatches() }, [])
+
   const handleSaveOrder = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
-
     try {
       const soldKg = parseFloat(form.sold_kg)
       const selectedBatch = batches.find(b => b.id === form.batch_id)
-
       if (!selectedBatch) throw new Error('Batch seçilmedi')
       if (soldKg <= 0) throw new Error('Geçerli kg miktarı girin')
       if (soldKg > parseFloat(selectedBatch.remaining_kg)) {
         throw new Error(`Maksimum ${selectedBatch.remaining_kg} kg satılabilir`)
       }
 
-      // Satış emrini kaydet
       const { data: order, error: orderError } = await supabase
         .from('sales_orders')
         .insert({
@@ -83,10 +65,8 @@ export default function Sales() {
         })
         .select()
         .single()
-
       if (orderError) throw orderError
 
-      // Hareket kaydı — satış emri oluşturuldu
       await supabase.from('movements').insert({
         batch_id: form.batch_id,
         action: 'sold',
@@ -97,7 +77,6 @@ export default function Sales() {
         notes: `Müşteri: ${form.customer}`,
       })
 
-      // Batch durumunu güncelle
       await supabase
         .from('batches')
         .update({
@@ -105,6 +84,15 @@ export default function Sales() {
           remaining_kg: parseFloat(selectedBatch.remaining_kg) - soldKg,
         })
         .eq('id', form.batch_id)
+
+      await log({
+        userId: user.id,
+        userEmail: user.email,
+        action: 'Satış emri oluşturuldu',
+        tableName: 'sales_orders',
+        recordId: order.id,
+        newValues: { batch_id: form.batch_id, sold_kg: soldKg, customer: form.customer },
+      })
 
       setSavedOrder({ ...order, batch: selectedBatch })
       setStep(STEP.SCAN)
@@ -115,12 +103,9 @@ export default function Sales() {
     }
   }
 
-  // Adım 2: Barkod okunduğunda
   const handleScan = async (scannedCode) => {
     if (!savedOrder) return
-
     try {
-      // Barkod eşleşme kontrolü
       if (scannedCode !== savedOrder.batch.batch_no) {
         setScanResult({
           success: false,
@@ -129,156 +114,243 @@ export default function Sales() {
         return
       }
 
-      // Eğer barkod doğruysa süreci tamamla
+      const { error: updateError } = await supabase
+        .from('batches')
+        .update({ location: 'depo_b', status: 'transferred' })
+        .eq('id', savedOrder.batch_id)
+      if (updateError) throw updateError
+
+      await supabase.from('movements').insert({
+        batch_id: savedOrder.batch_id,
+        action: 'transferred',
+        from_location: 'depo_a',
+        to_location: 'depo_b',
+        quantity_kg: savedOrder.sold_kg,
+        performed_by: user?.email || 'sistem',
+        notes: `Müşteri: ${savedOrder.customer} — Transfer onayı`,
+      })
+
+      await log({
+        userId: user.id,
+        userEmail: user.email,
+        action: 'Transfer tamamlandı',
+        tableName: 'batches',
+        recordId: savedOrder.batch_id,
+        newValues: { location: 'depo_b', status: 'transferred' },
+      })
+
       setScanResult({
         success: true,
-        message: `✅ Doğrulama Başarılı! Parti eşleşti: ${scannedCode}`,
+        message: `✅ Transfer onaylandı! ${savedOrder.batch.batch_no} Depo B'ye taşındı.`,
       })
       setStep(STEP.DONE)
     } catch (err) {
-      setScanResult({
-        success: false,
-        message: `Hata oluştu: ${err.message}`,
-      })
+      setScanResult({ success: false, message: `Hata: ${err.message}` })
     }
   }
 
-  // Süreci Sıfırla (Yeni Satış Emri)
   const handleReset = () => {
+    setStep(STEP.ORDER)
+    setSavedOrder(null)
+    setScanResult(null)
+    setError('')
     setForm({
       batch_id: '',
       sold_kg: '',
       customer: '',
       sale_date: new Date().toISOString().split('T')[0],
     })
-    setSavedOrder(null)
-    setScanResult(null)
-    setError('')
-    setStep(STEP.ORDER)
+    loadBatches()
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6 text-gray-800">🚀 Grissini Depo - Satış & Çıkış Yönetimi</h1>
+    <div className="p-4 max-w-md mx-auto">
+      <h2 className="text-xl font-bold text-gray-800 mb-2">🚚 Satış & Sevk</h2>
 
-      {error && (
-        <div className="bg-red-100 text-red-700 p-3 rounded mb-4 font-medium">
-          {error}
-        </div>
-      )}
+      {/* Adım göstergesi */}
+      <div className="flex items-center gap-2 mb-6">
+        {['Satış Emri', 'Transfer', 'Tamamlandı'].map((label, i) => {
+          const stepKeys = [STEP.ORDER, STEP.SCAN, STEP.DONE]
+          const isActive = step === stepKeys[i]
+          const isDone = stepKeys.indexOf(step) > i
+          return (
+            <div key={label} className="flex items-center gap-1 flex-1">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center
+                               text-xs font-bold flex-shrink-0
+                               ${isActive ? 'bg-amber-600 text-white' :
+                                 isDone   ? 'bg-green-500 text-white' :
+                                            'bg-gray-200 text-gray-500'}`}>
+                {isDone ? '✓' : i + 1}
+              </div>
+              <span className={`text-xs ${isActive ? 'text-amber-700 font-medium' : 'text-gray-400'}`}>
+                {label}
+              </span>
+              {i < 2 && <div className="flex-1 h-px bg-gray-200 ml-1" />}
+            </div>
+          )
+        })}
+      </div>
 
-      {/* ADIM 1: SATIŞ EMRİ FORMU */}
+      {/* ADIM 1 */}
       {step === STEP.ORDER && (
-        <form onSubmit={handleSaveOrder} className="bg-white p-6 rounded-lg shadow-md space-y-4">
-          <h2 className="text-lg font-semibold text-gray-700 mb-2">1. Adım: Satış Emri Oluştur</h2>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Müşteri Adı</label>
-            <input
-              type="text"
-              required
-              className="w-full p-2 border rounded"
-              placeholder="Örn: Bolaman Park"
-              value={form.customer}
-              onChange={e => setForm({ ...form, customer: e.target.value })}
-            />
-          </div>
+        <RoleGuard allowed={canEdit('warehouse')}>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <form onSubmit={handleSaveOrder} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Parti Seç (Depo A)
+                </label>
+                <select
+                  value={form.batch_id}
+                  onChange={(e) => setForm({ ...form, batch_id: e.target.value })}
+                  className="w-full px-3 py-3 border border-gray-300 rounded-xl
+                             focus:outline-none focus:ring-2 focus:ring-amber-500 text-base"
+                  required
+                >
+                  <option value="">-- Parti seçin --</option>
+                  {batches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.batch_no} — {b.remaining_kg} kg ({formatDate(b.production_date)})
+                    </option>
+                  ))}
+                </select>
+                {batches.length === 0 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    ⚠️ Satışa uygun stok bulunamadı (Kalite onayı bekleyen partiler olabilir)
+                  </p>
+                )}
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Satış Yapılacak Parti (Batch)</label>
-            <select
-              required
-              className="w-full p-2 border rounded"
-              value={form.batch_id}
-              onChange={e => setForm({ ...form, batch_id: e.target.value })}
-            >
-              <option value="">Seçiniz...</option>
-              {batches.map(b => (
-                <option key={b.id} value={b.id}>
-                  {b.batch_no} - {b.product_name} ({b.remaining_kg} kg kaldı)
-                </option>
-              ))}
-            </select>
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Satış Miktarı (kg)
+                </label>
+                <input
+                  type="number"
+                  value={form.sold_kg}
+                  onChange={(e) => setForm({ ...form, sold_kg: e.target.value })}
+                  className="w-full px-3 py-3 border border-gray-300 rounded-xl
+                             focus:outline-none focus:ring-2 focus:ring-amber-500 text-base"
+                  placeholder="0.00"
+                  min="0.01"
+                  step="0.01"
+                  required
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Satış Miktarı (KG)</label>
-            <input
-              type="number"
-              step="0.01"
-              required
-              className="w-full p-2 border rounded"
-              placeholder="0.00"
-              value={form.sold_kg}
-              onChange={e => setForm({ ...form, sold_kg: e.target.value })}
-            />
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Müşteri Adı
+                </label>
+                <input
+                  type="text"
+                  value={form.customer}
+                  onChange={(e) => setForm({ ...form, customer: e.target.value })}
+                  className="w-full px-3 py-3 border border-gray-300 rounded-xl
+                             focus:outline-none focus:ring-2 focus:ring-amber-500 text-base"
+                  placeholder="Müşteri / Firma adı"
+                  required
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Satış Tarihi</label>
-            <input
-              type="date"
-              required
-              className="w-full p-2 border rounded"
-              value={form.sale_date}
-              onChange={e => setForm({ ...form, sale_date: e.target.value })}
-            />
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Satış Tarihi
+                </label>
+                <input
+                  type="date"
+                  value={form.sale_date}
+                  onChange={(e) => setForm({ ...form, sale_date: e.target.value })}
+                  className="w-full px-3 py-3 border border-gray-300 rounded-xl
+                             focus:outline-none focus:ring-2 focus:ring-amber-500 text-base"
+                  required
+                />
+              </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 rounded font-medium transition"
-          >
-            {loading ? 'Kaydediliyor...' : 'Satış Emrini Onayla & Barkod Adımına Geç'}
-          </button>
-        </form>
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+                  ⚠️ {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || batches.length === 0}
+                className="w-full bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300
+                           text-white font-semibold py-3.5 rounded-xl transition-colors text-base"
+              >
+                {loading ? 'Kaydediliyor...' : 'Satış Emrini Kaydet →'}
+              </button>
+            </form>
+          </div>
+        </RoleGuard>
       )}
 
-      {/* ADIM 2: BARKOD TARAMA ADIMI */}
-      {step === STEP.SCAN && savedOrder && (
-        <div className="bg-white p-6 rounded-lg shadow-md space-y-6">
-          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
-            <h3 className="font-semibold text-blue-800">📋 Onaylanan Satış Emri Detayları</h3>
-            <p className="text-sm text-blue-700 mt-1">Müşteri: <strong>{savedOrder.customer}</strong></p>
-            <p className="text-sm text-blue-700">Ürün: <strong>{savedOrder.batch.product_name}</strong></p>
-            <p className="text-sm text-blue-700">Miktar: <strong>{savedOrder.sold_kg} KG</strong></p>
-            <p className="text-sm text-blue-900 mt-2 font-medium">⚠️ Lütfen çıkış yapacağınız ürünün üzerindeki barkodu okutun.</p>
+      {/* ADIM 2 */}
+      {step === STEP.SCAN && (
+        <div className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <p className="text-sm font-medium text-amber-800">Bekleyen Transfer</p>
+            <p className="font-mono text-base font-bold text-amber-900 mt-1">
+              {savedOrder?.batch?.batch_no}
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              {savedOrder?.sold_kg} kg → {savedOrder?.customer}
+            </p>
           </div>
 
-          {/* Donanım Barkod Okuyucu Girişi (El Terminali / Kablolu Okuyucu için) */}
-          <HardwareScannerInput onScan={handleScan} placeholder="El terminali ile okutun veya buraya tıklayıp taratın..." />
-
-          {/* Kamera Barkod Okuyucu Alternatifi */}
-          <div className="border-t pt-4">
-            <p className="text-xs text-gray-500 text-center mb-2">- VEYA KAMERAYI KULLANIN -</p>
-            <BarcodeScanner onScan={handleScan} />
-          </div>
-
-          {scanResult && (
-            <div className={`p-3 rounded text-center font-semibold ${scanResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+          {scanResult && !scanResult.success && (
+            <div className="bg-red-50 border border-red-300 rounded-xl p-4 text-sm text-red-700">
               {scanResult.message}
             </div>
           )}
+
+          <ScannerWrapper onScan={handleScan} active={step === STEP.SCAN} />
         </div>
       )}
 
-      {/* ADIM 3: TAMAMLANDI EKRANI */}
+      {/* ADIM 3 */}
       {step === STEP.DONE && (
-        <div className="bg-white p-8 rounded-lg shadow-md text-center space-y-4">
-          <div className="text-5xl text-green-500">🎉</div>
-          <h2 className="text-2xl font-bold text-gray-800">İşlem Başarıyla Tamamlandı!</h2>
-          <p className="text-gray-600 max-w-md mx-auto">
-            Ürün doğrulandı, Depo A stoku düşüldü ve satış transfer hareketi başarıyla kaydedildi.
-          </p>
+        <div className="text-center py-8">
+          <div className="text-6xl mb-4">✅</div>
+          <h3 className="text-xl font-bold text-green-700 mb-2">Transfer Tamamlandı!</h3>
+          <p className="text-gray-600 text-sm mb-6">{scanResult?.message}</p>
           <button
             onClick={handleReset}
-            className="mt-4 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-medium transition"
+            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold
+                       py-3 px-6 rounded-xl transition-colors"
           >
-            Yeni Satış İşlemi Başlat
+            Yeni Satış Emri
           </button>
         </div>
       )}
     </div>
+  )
+}
+
+function ScannerWrapper({ onScan, active }) {
+  const [open, setOpen] = useState(false)
+  if (!active) return null
+  return (
+    <>
+      <HardwareScannerInput onScan={onScan} />
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full border-2 border-dashed border-gray-300 text-gray-500
+                   py-6 rounded-xl hover:border-amber-400 hover:text-amber-600
+                   transition-colors text-sm"
+      >
+        📷 Kamerayı Aç
+      </button>
+      <p className="text-center text-xs text-gray-400 mt-2">
+        veya fiziksel barkod okuyucu ile direkt tarayın
+      </p>
+      {open && (
+        <BarcodeScanner
+          onScan={(code) => { setOpen(false); onScan(code) }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
   )
 }
