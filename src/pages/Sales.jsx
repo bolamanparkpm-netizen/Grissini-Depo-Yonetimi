@@ -103,51 +103,60 @@ export default function Sales() {
     }
   }
 
-  const handleScan = async (scannedCode) => {
-    if (!savedOrder) return
-    try {
-      if (scannedCode !== savedOrder.batch.batch_no) {
-        setScanResult({
-          success: false,
-          message: `❌ Yanlış parti! Beklenen: ${savedOrder.batch.batch_no} — Okunan: ${scannedCode}`,
-        })
-        return
-      }
-
-      const { error: updateError } = await supabase
-        .from('batches')
-        .update({ location: 'depo_b', status: 'transferred' })
-        .eq('id', savedOrder.batch_id)
-      if (updateError) throw updateError
-
-      await supabase.from('movements').insert({
-        batch_id: savedOrder.batch_id,
-        action: 'transferred',
-        from_location: 'depo_a',
-        to_location: 'depo_b',
-        quantity_kg: savedOrder.sold_kg,
-        performed_by: user?.email || 'sistem',
-        notes: `Müşteri: ${savedOrder.customer} — Transfer onayı`,
-      })
-
-      await log({
-        userId: user.id,
-        userEmail: user.email,
-        action: 'Transfer tamamlandı',
-        tableName: 'batches',
-        recordId: savedOrder.batch_id,
-        newValues: { location: 'depo_b', status: 'transferred' },
-      })
-
+const handleScan = async (scannedCode) => {
+  if (!savedOrder) return
+  try {
+    if (scannedCode !== savedOrder.batch.batch_no) {
       setScanResult({
-        success: true,
-        message: `✅ Transfer onaylandı! ${savedOrder.batch.batch_no} Depo B'ye taşındı.`,
+        success: false,
+        message: `❌ Yanlış parti! Beklenen: ${savedOrder.batch.batch_no} — Okunan: ${scannedCode}`,
       })
-      setStep(STEP.DONE)
-    } catch (err) {
-      setScanResult({ success: false, message: `Hata: ${err.message}` })
+      return
     }
+
+    // batch_id yerine batch.id kullan — daha güvenli
+    const batchId = savedOrder.batch_id || savedOrder.batch.id
+    
+    console.log('Güncellenecek batch ID:', batchId) // debug için
+
+    const { data: updateData, error: updateError } = await supabase
+      .from('batches')
+      .update({ location: 'depo_b', status: 'transferred' })
+      .eq('id', batchId)
+      .select() // sonucu geri al
+
+    if (updateError) throw updateError
+    
+    console.log('Güncelleme sonucu:', updateData) // debug için
+
+    await supabase.from('movements').insert({
+      batch_id: batchId,
+      action: 'transferred',
+      from_location: 'depo_a',
+      to_location: 'depo_b',
+      quantity_kg: savedOrder.sold_kg,
+      performed_by: user?.email || 'sistem',
+      notes: `Müşteri: ${savedOrder.customer} — Transfer onayı`,
+    })
+
+    await log({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'Transfer tamamlandı',
+      tableName: 'batches',
+      recordId: batchId,
+      newValues: { location: 'depo_b', status: 'transferred' },
+    })
+
+    setScanResult({
+      success: true,
+      message: `✅ Transfer onaylandı! ${savedOrder.batch.batch_no} Depo B'ye taşındı.`,
+    })
+    setStep(STEP.DONE)
+  } catch (err) {
+    setScanResult({ success: false, message: `Hata: ${err.message}` })
   }
+}
 
   const handleReset = () => {
     setStep(STEP.ORDER)
