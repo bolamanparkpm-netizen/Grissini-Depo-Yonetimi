@@ -77,14 +77,15 @@ export default function Sales() {
         notes: `Müşteri: ${form.customer}`,
       })
 
-      await supabase
-        .from('batches')
-        .update({
-          status: 'sold',
-          remaining_kg: parseFloat(selectedBatch.remaining_kg) - soldKg,
-        })
-        .eq('id', form.batch_id)
-
+	// Satış emri oluşturuldu — sadece status güncelle, remaining_kg dokunma
+	await supabase
+ 	 .from('batches')
+ 	 .update({
+  	  status: 'sold',
+ 	   // remaining_kg'ı BURADA düşürme — transfer tamamlanınca düşür
+ 	 })
+ 	 .eq('id', form.batch_id)
+	
       await log({
         userId: user.id,
         userEmail: user.email,
@@ -119,9 +120,13 @@ const handleScan = async (scannedCode) => {
     
     console.log('Güncellenecek batch ID:', batchId) // debug için
 
-    const { data: updateData, error: updateError } = await supabase
+    const { error: updateError } = await supabase
       .from('batches')
-      .update({ location: 'depo_b', status: 'transferred' })
+      .update({ 
+	location: 'depo_b', 
+	status: 'transferred' 
+	remaining_kg: savedOrder.sold_kg, // ← Satılan kg kadar Depo B'ye geçti
+     })
       .eq('id', batchId)
       .select() // sonucu geri al
 
