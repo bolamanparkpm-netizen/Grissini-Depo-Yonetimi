@@ -60,23 +60,20 @@ export default function AdminPanel() {
   }
 
   const handleRoleChange = async (userId, newRole) => {
-    await supabase
-      .from('user_profiles')
-      .update({ role: newRole })
-      .eq('id', userId)
-    fetchUsers()
-  }
+    // Önce UI'ı güncelle (optimistic update)
+  setUsers(prev => prev.map(u =>
+    u.id === userId ? { ...u, role: newRole } : u
+  ))
 
-  const handleAddTarget = async () => {
-    if (!newTarget.target_kg || !newTarget.bonus_amount) return
-    await supabase.from('shift_targets').insert({
-      shift:        newTarget.shift,
-      target_kg:    parseFloat(newTarget.target_kg),
-      bonus_amount: parseFloat(newTarget.bonus_amount),
-      valid_from:   new Date().toISOString().split('T')[0],
-    })
-    setNewTarget({ shift: 'sabah', target_kg: '', bonus_amount: '' })
-    fetchTargets()
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ role: newRole })
+    .eq('id', userId)
+
+  if (error) {
+    alert('Rol güncellenemedi: ' + error.message)
+    fetchUsers() // Hata varsa geri al
+  }
   }
 
   const handleDeleteTarget = async (id) => {
@@ -156,7 +153,7 @@ export default function AdminPanel() {
                 <select
                   value={u.role}
                   onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                  disabled={profile?.role !== 'admin'}
+                  disabled={false}
                   className="text-sm border border-gray-300 rounded-lg px-2 py-1.5
                              focus:outline-none focus:ring-2 focus:ring-amber-500
                              disabled:bg-gray-100 disabled:cursor-not-allowed"
