@@ -17,60 +17,126 @@ export default function Consumption() {
     setScanning(false)
     setLoading(true)
     setResult(null)
+
     try {
       const { data: batch, error: fetchError } = await supabase
         .from('batches')
         .select('*')
         .eq('batch_no', scannedCode)
-        .eq('location', 'depo_b')
+        .not('status', 'eq', 'consumed')
+        .order('created_at', { ascending: false })
+        .limit(1)
         .single()
 
       if (fetchError || !batch) {
-        // Depo B'de değil mi diye kontrol et
-        const { data: anyBatch } = await supabase
+        // Tüketilmiş mi kontrol et
+        const { data: consumed } = await supabase
           .from('batches')
-          .select('location, status')
+          .select('status')
           .eq('batch_no', scannedCode)
+          .eq('status', 'consumed')
+          .limit(1)
           .single()
 
-        if (anyBatch?.status === 'consumed') {
+        if (consumed) {
           setResult({ success: false, message: '❌ Bu parti zaten tüketilmiş.' })
-        } else if (anyBatch?.location === 'depo_a') {
-          setResult({ success: false, message: '❌ Bu parti henüz Depo A\'da, transfer edilmemiş.' })
         } else {
           setResult({ success: false, message: `❌ Parti bulunamadı: ${scannedCode}` })
         }
         return
       }
 
-      const { error: updateError } = await supabase
-        .from('batches')
-        .update({ status: 'consumed', location: 'consumed', remaining_kg: 0 })
-        .eq('id', batch.id)
-      if (updateError) throw updateError
+      // SENARYO 1: Depo B'de → Depo C'ye taşı
+      if (batch.location === 'depo_b') {
+        const { error: updateError } = await supabase
+          .from('batches')
+          .update({
+            location: 'depo_c',
+            status: 'in_consumption',
+          })
+          .eq('id', batch.id)
+        if (updateError) throw updateError
 
-      await supabase.from('movements').insert({
-        batch_id: batch.id,
-        action: 'consumed',
-        from_location: 'depo_b',
-        to_location: 'consumed',
-        quantity_kg: batch.remaining_kg,
-        performed_by: user?.email || 'sistem',
-        notes: `Tüketim onayı — ${new Date().toLocaleString('tr-TR')}`,
+        await supabase.from('movements').insert({
+          batch_id: batch.id,
+          action: 'transferred',
+          from_location: 'depo_b',
+          to_location: 'depo_c',
+          quantity_kg: batch.remaining_kg,
+          performed_by: user?.email || 'sistem',
+          notes: `Tüketim deposuna alındı — ${new Date().toLocaleString('tr-TR')}`,
+        })
+
+        await log({
+          userId: user.id,
+          userEmail: user.email,
+          action: 'Depo B → Depo C (Tüketim deposuna alındı)',
+          tableName: 'batches',
+          recordId: batch.id,
+          oldValues: { location: 'depo_b' },
+          newValues: { location: 'depo_c', status: 'in_consumption' },
+        })
+
+        setResult({
+          success: true,
+          type: 'depo_c',
+          message: `✅ ${batch.batch_no} tüketim deposuna alındı!`,
+          batch,
+        })
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100])
+        return
+      }
+
+      // SENARYO 2: Depo C'de → Tüketimi tamamla (stoktan düş)
+      if (batch.location === 'depo_c') {
+        const { error: updateError } = await supabase
+          .from('batches')
+          .update({
+            status: 'consumed',
+            location: 'consumed',
+            remaining_kg: 0,
+          })
+          .eq('id', batch.id)
+        if (updateError) throw updateError
+
+        await supabase.from('movements').insert({
+          batch_id: batch.id,
+          action: 'consumed',
+          from_location: 'depo_c',
+          to_location: 'consumed',
+          quantity_kg: batch.remaining_kg,
+          performed_by: user?.email || 'sistem',
+          notes: `Tüketim tamamlandı — ${new Date().toLocaleString('tr-TR')}`,
+        })
+
+        await log({
+          userId: user.id,
+          userEmail: user.email,
+          action: 'Tüketim tamamlandı (Depo C → Consumed)',
+          tableName: 'batches',
+          recordId: batch.id,
+          oldValues: { location: 'depo_c', remaining_kg: batch.remaining_kg },
+          newValues: { location: 'consumed', status: 'consumed', remaining_kg: 0 },
+        })
+
+        setResult({
+          success: true,
+          type: 'consumed',
+          message: `✅ Tüketim tamamlandı! ${batch.batch_no} stoktan düşüldü.`,
+          batch,
+        })
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100])
+        return
+      }
+
+      // Depo A'da veya başka yerde
+      setResult({
+        success: false,
+        message: `❌ Bu parti ${
+          batch.location === 'depo_a' ? 'Depo A\'da (henüz satılmamış)' :
+          batch.location === 'depo_c' ? 'zaten Depo C\'de' : batch.location + "'da"
+        }. Tüketim için önce Depo B'ye alınmalı.`,
       })
-
-      await log({
-        userId: user.id,
-        userEmail: user.email,
-        action: 'Tüketim kaydedildi',
-        tableName: 'batches',
-        recordId: batch.id,
-        oldValues: { status: 'transferred', location: 'depo_b' },
-        newValues: { status: 'consumed', location: 'consumed' },
-      })
-
-      setResult({ success: true, message: '✅ Tüketim onaylandı!', batch })
-      if (navigator.vibrate) navigator.vibrate([100, 50, 100])
     } catch (err) {
       setResult({ success: false, message: `Hata: ${err.message}` })
     } finally {
@@ -82,18 +148,37 @@ export default function Consumption() {
 
   return (
     <div className="p-4 max-w-md mx-auto">
-      <h2 className="text-xl font-bold text-gray-800 mb-2">✅ Tüketim Kaydı</h2>
-      <p className="text-sm text-gray-500 mb-6">
-        Depo B'deki partiyi tüketildi olarak işaretlemek için barkodu okutun.
+      <h2 className="text-xl font-bold text-gray-800 mb-2">🍽️ Tüketim Kaydı</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        Depo B → barkod okut → Depo C'ye al.<br />
+        Depo C → barkod okut → Tüketimi tamamla.
       </p>
 
+      {/* Akış göstergesi */}
+      <div className="flex items-center justify-center gap-2 mb-6 text-xs text-gray-500">
+        <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-lg font-medium">
+          🏪 Depo B
+        </span>
+        <span>→</span>
+        <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-lg font-medium">
+          🍽️ Depo C
+        </span>
+        <span>→</span>
+        <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-lg font-medium">
+          ✅ Tüketildi
+        </span>
+      </div>
+
+      {/* Sonuç mesajı */}
       {result && (
         <div className={`rounded-xl p-5 mb-4 text-center
           ${result.success ? 'bg-green-50 border border-green-300'
                            : 'bg-red-50 border border-red-300'}`}>
           <p className={`font-semibold text-lg mb-1
             ${result.success ? 'text-green-700' : 'text-red-700'}`}>
-            {result.success ? '✅ Tüketildi' : '❌ Hata'}
+            {result.success
+              ? result.type === 'depo_c' ? '🍽️ Depo C\'ye Alındı' : '✅ Tüketim Tamamlandı'
+              : '❌ Hata'}
           </p>
           <p className={`text-sm ${result.success ? 'text-green-600' : 'text-red-600'}`}>
             {result.message}
@@ -104,7 +189,10 @@ export default function Consumption() {
                 {result.batch.batch_no}
               </p>
               <p className="text-xs text-green-600 mt-1">
-                {result.batch.remaining_kg} kg tüketildi
+                {result.batch.remaining_kg} kg
+                {result.type === 'depo_c'
+                  ? ' → Depo C\'ye taşındı'
+                  : ' → Stoktan düşüldü'}
               </p>
             </div>
           )}
@@ -119,7 +207,7 @@ export default function Consumption() {
 
       {loading && (
         <div className="flex items-center justify-center py-8">
-          <div className="w-10 h-10 border-4 border-green-500 border-t-transparent
+          <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent
                           rounded-full animate-spin" />
         </div>
       )}
@@ -135,7 +223,9 @@ export default function Consumption() {
           >
             <span className="text-5xl">📷</span>
             <span className="text-base">Barkod Tara</span>
-            <span className="text-gray-400 text-xs">Depo B → Tüketildi</span>
+            <span className="text-gray-400 text-xs">
+              Depo B → Depo C → Tüketildi
+            </span>
           </button>
           <p className="text-center text-xs text-gray-400 mt-2">
             veya fiziksel barkod okuyucu ile direkt tarayın
