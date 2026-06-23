@@ -60,20 +60,32 @@ export default function AdminPanel() {
   }
 
   const handleRoleChange = async (userId, newRole) => {
-    // Önce UI'ı güncelle (optimistic update)
+    
+  // Sadece local state güncelle, henüz kaydetme
   setUsers(prev => prev.map(u =>
-    u.id === userId ? { ...u, role: newRole } : u
+    u.id === userId ? { ...u, role: newRole, _dirty: true } : u
   ))
 
-  const { error } = await supabase
-    .from('user_profiles')
-    .update({ role: newRole })
-    .eq('id', userId)
-
-  if (error) {
-    alert('Rol güncellenemedi: ' + error.message)
-    fetchUsers() // Hata varsa geri al
   }
+
+  	const handleSaveRole = async (userId) => {
+ 	 const user = users.find(u => u.id === userId)
+ 	 if (!user) return
+	  setSaving(userId)
+  	const { error } = await supabase
+  	  .from('user_profiles')
+  	  .update({ role: user.role })
+  	  .eq('id', userId)
+
+ 	 if (error) {
+ 	   alert('Kayıt hatası: ' + error.message)
+ 	 } else {
+  	  // _dirty flag'ini kaldır
+  	  setUsers(prev => prev.map(u =>
+  	    u.id === userId ? { ...u, _dirty: false } : u
+  	  ))
+  	}
+  	setSaving(null)
   }
 
   const handleDeleteTarget = async (id) => {
@@ -153,7 +165,6 @@ export default function AdminPanel() {
                 <select
                   value={u.role}
                   onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                  disabled={false}
                   className="text-sm border border-gray-300 rounded-lg px-2 py-1.5
                              focus:outline-none focus:ring-2 focus:ring-amber-500
                              disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -162,10 +173,19 @@ export default function AdminPanel() {
                     <option key={val} value={val}>{label}</option>
                   ))}
                 </select>
-              </div>
-            ))}
-          </div>
-        )}
+               {u._dirty && (
+       		 <button
+         	 onClick={() => handleSaveRole(u.id)}
+         	 disabled={saving === u.id}
+        	  className="text-sm bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300
+              	       text-white font-medium px-3 py-1.5 rounded-lg whitespace-nowrap"
+       		 >
+      	    {saving === u.id ? '...' : '💾 Kaydet'}
+     	   </button>
+    	  )}
+ 	   </div>
+ 	 </div>
+	))}
 
         {/* VARDİYA HEDEFLERİ */}
         {!loading && tab === 'targets' && (

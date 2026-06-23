@@ -12,59 +12,73 @@ export default function ShiftReport() {
   const [targets, setTargets] = useState([])
   const [loading, setLoading] = useState(false)
 
-  // Vardiya hedeflerini çek
   useEffect(() => {
-    supabase
+    fetchTargets()
+  }, [])
+
+  useEffect(() => {
+    fetchReport()
+  }, [reportDate]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchTargets = async () => {
+    const { data } = await supabase
       .from('shift_targets')
       .select('*')
       .order('target_kg', { ascending: true })
-      .then(({ data }) => setTargets(data || []))
-  }, [])
+    setTargets(data || [])
+  }
 
   const fetchReport = async () => {
     setLoading(true)
-    const { data: batches, error } = await supabase
-      .from('batches')
-      .select('*')
-      .eq('production_date', reportDate)
-      .not('shift', 'is', null)
-      .order('created_at', { ascending: true })
+    try {
+      const { data: batches, error } = await supabase
+        .from('batches')
+        .select('*')
+        .eq('production_date', reportDate)
+        .not('shift', 'is', null)
+        .order('created_at', { ascending: true })
 
-    if (error) { console.error(error); setLoading(false); return }
+      if (error) throw error
 
-    // Vardiyaya göre grupla
-    const grouped = { sabah: [], aksam: [], gece: [] }
-    batches.forEach(b => { if (grouped[b.shift]) grouped[b.shift].push(b) })
+      // Vardiyaya göre grupla
+      const grouped = { sabah: [], aksam: [], gece: [] }
+      ;(batches || []).forEach(b => {
+        if (grouped[b.shift]) grouped[b.shift].push(b)
+      })
 
-    const result = ['sabah', 'aksam', 'gece'].map(shift => {
-      const shiftBatches = grouped[shift]
-      const totalKg = shiftBatches.reduce((s, b) => s + parseFloat(b.quantity_kg || 0), 0)
+      // targets state'i bu noktada henüz boş olabilir
+      // O yüzden targets'ı direkt Supabase'den çekiyoruz
+      const { data: freshTargets } = await supabase
+        .from('shift_targets')
+        .select('*')
+        .order('target_kg', { ascending: true })
 
-      // O vardiya için geçerli hedefleri bul
-      const shiftTargets = targets.filter(t => t.shift === shift)
-        .sort((a, b) => a.target_kg - b.target_kg)
+      const allTargets = freshTargets || []
+      setTargets(allTargets)
 
-      // Hangi hedefe ulaşıldı?
-      const achievedTarget = [...shiftTargets]
-        .reverse()
-        .find(t => totalKg >= t.target_kg)
+      const result = ['sabah', 'aksam', 'gece'].map(shift => {
+        const shiftBatches = grouped[shift]
+        const totalKg = shiftBatches.reduce(
+          (s, b) => s + parseFloat(b.quantity_kg || 0), 0
+        )
+        const shiftTargets = allTargets
+          .filter(t => t.shift === shift)
+          .sort((a, b) => a.target_kg - b.target_kg)
 
-      return {
-        shift,
-        batches: shiftBatches,
-        totalKg,
-        targets: shiftTargets,
-        achievedTarget,
-      }
-    })
+        const achievedTarget = [...shiftTargets]
+          .reverse()
+          .find(t => totalKg >= t.target_kg)
 
-    setData(result)
-    setLoading(false)
+        return { shift, batches: shiftBatches, totalKg, targets: shiftTargets, achievedTarget }
+      })
+
+      setData(result)
+    } catch (err) {
+      console.error('Rapor yükleme hatası:', err)
+    } finally {
+      setLoading(false)
+    }
   }
-
-  useEffect(() => {
-    if (targets.length > 0) fetchReport()
-  }, [reportDate, targets]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExport = () => {
     const columns = [
@@ -75,18 +89,25 @@ export default function ShiftReport() {
       { key: 'hedef_kg',  label: 'Hedef (kg)' },
       { key: 'prim',      label: 'Kazanılan Prim (₺)' },
     ]
-
     const rows = data.flatMap(d =>
-      d.batches.map(b => ({
-        tarih:     reportDate,
-        vardiya:   d.shift,
-        batch_no:  b.batch_no,
-        miktar_kg: b.quantity_kg,
-        hedef_kg:  d.achievedTarget?.target_kg || '—',
-        prim:      d.achievedTarget?.bonus_amount || 0,
-      }))
+      d.batches.length > 0
+        ? d.batches.map(b => ({
+            tarih:     reportDate,
+            vardiya:   d.shift,
+            batch_no:  b.batch_no,
+            miktar_kg: b.quantity_kg,
+            hedef_kg:  d.achievedTarget?.target_kg || '—',
+            prim:      d.achievedTarget?.bonus_amount || 0,
+          }))
+        : [{
+            tarih:     reportDate,
+            vardiya:   d.shift,
+            batch_no:  '—',
+            miktar_kg: 0,
+            hedef_kg:  d.targets[0]?.target_kg || '—',
+            prim:      0,
+          }]
     )
-
     exportToCsv(`vardiya-raporu-${reportDate}.csv`, rows, columns)
   }
 
@@ -104,7 +125,6 @@ export default function ShiftReport() {
         </button>
       </div>
 
-      {/* Tarih seçimi */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-700 mb-1.5">
           Rapor Tarihi
@@ -125,12 +145,12 @@ export default function ShiftReport() {
         </div>
       )}
 
-      {/* Vardiya kartları */}
-      {!loading && data.map(({ shift, batches, totalKg, targets: shiftTargets, achievedTarget }) => (
-        <div key={shift} className="bg-white rounded-xl border border-gray-200 shadow-sm mb-4 overflow-hidden">
-          {/* Başlık */}
-          <div className={`px-4 py-3 flex items-center justify-between
-            ${achievedTarget ? 'bg-green-600' : totalKg > 0 ? 'bg-amber-600' : 'bg-gray-400'} text-white`}>
+      {!loading && data.map(({ shift, batches: shiftBatches, totalKg, targets: shiftTargets, achievedTarget }) => (
+        <div key={shift}
+             className="bg-white rounded-xl border border-gray-200 shadow-sm mb-4 overflow-hidden">
+          <div className={`px-4 py-3 flex items-center justify-between text-white
+            ${achievedTarget ? 'bg-green-600' :
+              totalKg > 0    ? 'bg-amber-600' : 'bg-gray-400'}`}>
             <div>
               <span className="font-semibold">
                 {SHIFT_ICONS[shift]} {shift.charAt(0).toUpperCase() + shift.slice(1)} Vardiyası
@@ -147,7 +167,6 @@ export default function ShiftReport() {
             )}
           </div>
 
-          {/* Hedef çubuğu */}
           {shiftTargets.length > 0 && (
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
               {shiftTargets.map(t => {
@@ -163,7 +182,8 @@ export default function ShiftReport() {
                     </div>
                     <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all ${achieved ? 'bg-green-500' : 'bg-amber-500'}`}
+                        className={`h-full rounded-full transition-all
+                          ${achieved ? 'bg-green-500' : 'bg-amber-500'}`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -173,18 +193,21 @@ export default function ShiftReport() {
             </div>
           )}
 
-          {/* Batch listesi */}
-          {batches.length === 0 ? (
-            <p className="p-4 text-center text-gray-400 text-sm">Bu vardiyada üretim yok</p>
+          {shiftBatches.length === 0 ? (
+            <p className="p-4 text-center text-gray-400 text-sm">
+              Bu vardiyada üretim yok
+            </p>
           ) : (
             <div className="divide-y divide-gray-100">
-              {batches.map(b => (
+              {shiftBatches.map(b => (
                 <div key={b.id} className="px-4 py-2.5 flex items-center justify-between">
                   <div>
-                    <p className="font-mono text-sm font-semibold text-gray-700">{b.batch_no}</p>
+                    <p className="font-mono text-sm font-semibold text-gray-700">
+                      {b.batch_no}
+                    </p>
                     <p className="text-xs text-gray-400">
-                      {b.quality_status === 'approved' ? '✅ Onaylı' :
-                       b.quality_status === 'pending'  ? '⏳ Bekliyor' :
+                      {b.quality_status === 'approved'   ? '✅ Onaylı' :
+                       b.quality_status === 'pending'    ? '⏳ Bekliyor' :
                        b.quality_status === 'quarantine' ? '🔬 Karantina' : '❌ Red'}
                     </p>
                   </div>
@@ -195,6 +218,13 @@ export default function ShiftReport() {
           )}
         </div>
       ))}
+
+      {!loading && data.length === 0 && (
+        <div className="text-center py-12 text-gray-400">
+          <p className="text-4xl mb-3">📭</p>
+          <p>Bu tarihte üretim kaydı bulunamadı</p>
+        </div>
+      )}
     </div>
   )
 }
