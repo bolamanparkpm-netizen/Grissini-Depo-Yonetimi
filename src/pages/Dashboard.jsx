@@ -10,29 +10,22 @@ export default function Dashboard() {
   const [karantina, setKarantina] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const fetchStock = async () => {
-    const { data, error } = await supabase
-      .from('batches')
-      .select('*')
-      .not('status', 'eq', 'consumed')
-      .order('production_date', { ascending: false })
+const fetchStock = async () => {
+  const { data, error } = await supabase
+    .from('batches')
+    .select('*')
+    .not('status', 'in', '("consumed","rejected")')
+    .order('production_date', { ascending: false })
 
-    if (error) { console.error('Stok yükleme hatası:', error); return }
+  if (error) { console.error(error); return }
 
-    // Depo A — üretim deposu (tüm onay durumları)
-    setDepoA(data.filter(b => b.location === 'depo_a'))
+  setDepoA(data.filter(b => b.location === 'depo_a'))
+  setDepoB(data.filter(b => b.location === 'depo_b'))
+  setDepoC(data.filter(b => b.location === 'depo_c'))
+  setKarantina(data.filter(b => b.location === 'depo_karantina'))
 
-    // Depo B — satış deposu (transfer edilmiş)
-    setDepoB(data.filter(b => b.location === 'depo_b'))
-
-    // Depo C — tüketim deposu
-    setDepoC(data.filter(b => b.location === 'depo_c'))
-
-    // Karantina — konum fark etmeksizin
-    setKarantina(data.filter(b => b.quality_status === 'quarantine'))
-
-    setLoading(false)
-  }
+  setLoading(false)
+}
 
   useEffect(() => {
     fetchStock()
@@ -143,11 +136,10 @@ export default function Dashboard() {
       />
       {karantina.length > 0 && (
         <StockCard
-          title="🔬 Karantina — Analiz Bekliyor"
+          title="🔬 Karantina Deposu"
           batches={karantina}
           colorClass="orange"
           emptyMsg=""
-          showLocation
         />
       )}
     </div>
