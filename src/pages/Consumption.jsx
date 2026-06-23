@@ -13,136 +13,88 @@ export default function Consumption() {
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
 
-  const handleScan = async (scannedCode) => {
-    setScanning(false)
-    setLoading(true)
-    setResult(null)
+const handleScan = async (scannedCode) => {
+  setScanning(false)
+  setLoading(true)
+  setResult(null)
 
-    try {
-      const { data: batch, error: fetchError } = await supabase
+  try {
+    const { data: batch, error: fetchError } = await supabase
+      .from('batches')
+      .select('*')
+      .eq('batch_no', scannedCode)
+      .eq('location', 'depo_c')
+      .single()
+
+    if (fetchError || !batch) {
+      // Nerede olduğunu bul
+      const { data: anyBatch } = await supabase
         .from('batches')
-        .select('*')
+        .select('location, status')
         .eq('batch_no', scannedCode)
-        .not('status', 'eq', 'consumed')
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
 
-      if (fetchError || !batch) {
-        // Tüketilmiş mi kontrol et
-        const { data: consumed } = await supabase
-          .from('batches')
-          .select('status')
-          .eq('batch_no', scannedCode)
-          .eq('status', 'consumed')
-          .limit(1)
-          .single()
-
-        if (consumed) {
-          setResult({ success: false, message: '❌ Bu parti zaten tüketilmiş.' })
-        } else {
-          setResult({ success: false, message: `❌ Parti bulunamadı: ${scannedCode}` })
-        }
-        return
+      if (!anyBatch) {
+        setResult({ success: false, message: `❌ Parti bulunamadı: ${scannedCode}` })
+      } else if (anyBatch.status === 'consumed') {
+        setResult({ success: false, message: '❌ Bu parti zaten tüketilmiş.' })
+      } else if (anyBatch.location === 'depo_a') {
+        setResult({ success: false, message: '❌ Bu parti Depo A\'da — kalite onayı bekleniyor.' })
+      } else if (anyBatch.location === 'depo_b') {
+        setResult({ success: false, message: '❌ Bu parti Depo B\'de — önce satış transferi yapılmalı.' })
+      } else {
+        setResult({ success: false, message: `❌ Bu parti tüketim deposunda değil.` })
       }
-
-      // SENARYO 1: Depo B'de → Depo C'ye taşı
-      if (batch.location === 'depo_b') {
-        const { error: updateError } = await supabase
-          .from('batches')
-          .update({
-            location: 'depo_c',
-            status: 'in_consumption',
-          })
-          .eq('id', batch.id)
-        if (updateError) throw updateError
-
-        await supabase.from('movements').insert({
-          batch_id: batch.id,
-          action: 'transferred',
-          from_location: 'depo_b',
-          to_location: 'depo_c',
-          quantity_kg: batch.remaining_kg,
-          performed_by: user?.email || 'sistem',
-          notes: `Tüketim deposuna alındı — ${new Date().toLocaleString('tr-TR')}`,
-        })
-
-        await log({
-          userId: user.id,
-          userEmail: user.email,
-          action: 'Depo B → Depo C (Tüketim deposuna alındı)',
-          tableName: 'batches',
-          recordId: batch.id,
-          oldValues: { location: 'depo_b' },
-          newValues: { location: 'depo_c', status: 'in_consumption' },
-        })
-
-        setResult({
-          success: true,
-          type: 'depo_c',
-          message: `✅ ${batch.batch_no} tüketim deposuna alındı!`,
-          batch,
-        })
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100])
-        return
-      }
-
-      // SENARYO 2: Depo C'de → Tüketimi tamamla (stoktan düş)
-      if (batch.location === 'depo_c') {
-        const { error: updateError } = await supabase
-          .from('batches')
-          .update({
-            status: 'consumed',
-            location: 'consumed',
-            remaining_kg: 0,
-          })
-          .eq('id', batch.id)
-        if (updateError) throw updateError
-
-        await supabase.from('movements').insert({
-          batch_id: batch.id,
-          action: 'consumed',
-          from_location: 'depo_c',
-          to_location: 'consumed',
-          quantity_kg: batch.remaining_kg,
-          performed_by: user?.email || 'sistem',
-          notes: `Tüketim tamamlandı — ${new Date().toLocaleString('tr-TR')}`,
-        })
-
-        await log({
-          userId: user.id,
-          userEmail: user.email,
-          action: 'Tüketim tamamlandı (Depo C → Consumed)',
-          tableName: 'batches',
-          recordId: batch.id,
-          oldValues: { location: 'depo_c', remaining_kg: batch.remaining_kg },
-          newValues: { location: 'consumed', status: 'consumed', remaining_kg: 0 },
-        })
-
-        setResult({
-          success: true,
-          type: 'consumed',
-          message: `✅ Tüketim tamamlandı! ${batch.batch_no} stoktan düşüldü.`,
-          batch,
-        })
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100])
-        return
-      }
-
-      // Depo A'da veya başka yerde
-      setResult({
-        success: false,
-        message: `❌ Bu parti ${
-          batch.location === 'depo_a' ? 'Depo A\'da (henüz satılmamış)' :
-          batch.location === 'depo_c' ? 'zaten Depo C\'de' : batch.location + "'da"
-        }. Tüketim için önce Depo B'ye alınmalı.`,
-      })
-    } catch (err) {
-      setResult({ success: false, message: `Hata: ${err.message}` })
-    } finally {
-      setLoading(false)
+      return
     }
+
+    // Depo C'den tüket
+    const { error: updateError } = await supabase
+      .from('batches')
+      .update({
+        status: 'consumed',
+        location: 'consumed',
+        remaining_kg: 0,
+      })
+      .eq('id', batch.id)
+    if (updateError) throw updateError
+
+    await supabase.from('movements').insert({
+      batch_id: batch.id,
+      action: 'consumed',
+      from_location: 'depo_c',
+      to_location: 'consumed',
+      quantity_kg: batch.remaining_kg,
+      performed_by: user?.email || 'sistem',
+      notes: `Tüketim tamamlandı — ${new Date().toLocaleString('tr-TR')}`,
+    })
+
+    await log({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'Tüketim tamamlandı — Depo C → Consumed',
+      tableName: 'batches',
+      recordId: batch.id,
+      oldValues: { location: 'depo_c', remaining_kg: batch.remaining_kg },
+      newValues: { location: 'consumed', status: 'consumed', remaining_kg: 0 },
+    })
+
+    setResult({
+      success: true,
+      type: 'consumed',
+      message: `✅ Tüketim tamamlandı! ${batch.batch_no} stoktan düşüldü.`,
+      batch,
+    })
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100])
+
+  } catch (err) {
+    setResult({ success: false, message: `Hata: ${err.message}` })
+  } finally {
+    setLoading(false)
   }
+}
 
   const handleReset = () => { setResult(null); setScanning(false) }
 
@@ -155,19 +107,19 @@ export default function Consumption() {
       </p>
 
       {/* Akış göstergesi */}
-      <div className="flex items-center justify-center gap-2 mb-6 text-xs text-gray-500">
-        <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-lg font-medium">
-          🏪 Depo B
-        </span>
-        <span>→</span>
-        <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-lg font-medium">
-          🍽️ Depo C
-        </span>
-        <span>→</span>
-        <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-lg font-medium">
-          ✅ Tüketildi
-        </span>
-      </div>
+	<div className="flex items-center justify-center gap-2 mb-6 text-xs text-gray-500">
+	  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-lg font-medium">
+	    🏪 Depo B
+	  </span>
+	  <span>→</span>
+	  <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-lg font-medium">
+	    🍽️ Depo C
+	  </span>
+	  <span>→</span>
+	  <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-lg font-medium">
+	    ✅ Tüketildi
+	  </span>
+	</div>
 
       {/* Sonuç mesajı */}
       {result && (

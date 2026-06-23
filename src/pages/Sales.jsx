@@ -29,16 +29,16 @@ export default function Sales() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const loadBatches = () => {
-    supabase
-      .from('batches')
-      .select('*')
-      .eq('location', 'depo_a')
-      .eq('status', 'in_stock')
-      .eq('quality_status', 'approved')
-      .order('production_date', { ascending: false })
-      .then(({ data }) => setBatches(data || []))
-  }
+const loadBatches = () => {
+  supabase
+    .from('batches')
+    .select('*')
+    .eq('location', 'depo_b')        // ← Depo B
+    .eq('status', 'transferred')      // ← Transfer edilmiş
+    .eq('quality_status', 'approved') // ← Kalite onaylı
+    .order('production_date', { ascending: false })
+    .then(({ data }) => setBatches(data || []))
+}
 
   useEffect(() => { loadBatches() }, [])
 
@@ -67,14 +67,11 @@ export default function Sales() {
         .single()
       if (orderError) throw orderError
 
-      await supabase.from('movements').insert({
-        batch_id: form.batch_id,
-        action: 'sold',
-        from_location: 'depo_a',
-        to_location: 'depo_b',
-        quantity_kg: soldKg,
-        performed_by: user?.email || 'sistem',
-        notes: `Müşteri: ${form.customer}`,
+	// Batch durumunu güncelle — sadece sold yap, location değişmesin
+	await supabase
+ 	  .from('batches')
+	  .update({ status: 'sold' })
+	  .eq('id', form.batch_id)
       })
 
 	// Satış emri oluşturuldu — sadece status güncelle, remaining_kg dokunma
@@ -115,47 +112,40 @@ const handleScan = async (scannedCode) => {
       return
     }
 
-    // batch_id yerine batch.id kullan — daha güvenli
     const batchId = savedOrder.batch_id || savedOrder.batch.id
-    
-    console.log('Güncellenecek batch ID:', batchId) // debug için
 
     const { error: updateError } = await supabase
       .from('batches')
-      .update({ 
-	location: 'depo_b', 
-	status: 'transferred' 
-	remaining_kg: savedOrder.sold_kg, // ← Satılan kg kadar Depo B'ye geçti
-     })
+      .update({
+        location: 'depo_c',           // ← Depo C'ye taşı
+        status: 'in_consumption',
+        remaining_kg: savedOrder.sold_kg,
+      })
       .eq('id', batchId)
-      .select() // sonucu geri al
-
     if (updateError) throw updateError
-    
-    console.log('Güncelleme sonucu:', updateData) // debug için
 
     await supabase.from('movements').insert({
       batch_id: batchId,
       action: 'transferred',
-      from_location: 'depo_a',
-      to_location: 'depo_b',
+      from_location: 'depo_b',
+      to_location: 'depo_c',
       quantity_kg: savedOrder.sold_kg,
       performed_by: user?.email || 'sistem',
-      notes: `Müşteri: ${savedOrder.customer} — Transfer onayı`,
+      notes: `Müşteri: ${savedOrder.customer} — Depo B → Depo C`,
     })
 
     await log({
       userId: user.id,
       userEmail: user.email,
-      action: 'Transfer tamamlandı',
+      action: 'Satış transferi: Depo B → Depo C',
       tableName: 'batches',
       recordId: batchId,
-      newValues: { location: 'depo_b', status: 'transferred' },
+      newValues: { location: 'depo_c', status: 'in_consumption' },
     })
 
     setScanResult({
       success: true,
-      message: `✅ Transfer onaylandı! ${savedOrder.batch.batch_no} Depo B'ye taşındı.`,
+      message: `✅ Transfer onaylandı! ${savedOrder.batch.batch_no} Depo C'ye taşındı.`,
     })
     setStep(STEP.DONE)
   } catch (err) {
@@ -327,8 +317,11 @@ const handleScan = async (scannedCode) => {
       {step === STEP.DONE && (
         <div className="text-center py-8">
           <div className="text-6xl mb-4">✅</div>
-          <h3 className="text-xl font-bold text-green-700 mb-2">Transfer Tamamlandı!</h3>
-          <p className="text-gray-600 text-sm mb-6">{scanResult?.message}</p>
+	// ADIM 3 mesajını güncelle
+	<h3 className="text-xl font-bold text-green-700 mb-2">Transfer Tamamlandı!</h3>
+	<p className="text-gray-600 text-sm mb-6">
+	  {savedOrder?.batch?.batch_no} Depo C — Tüketim Deposu'na taşındı.
+	</p>
           <button
             onClick={handleReset}
             className="bg-amber-600 hover:bg-amber-700 text-white font-semibold

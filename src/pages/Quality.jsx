@@ -43,50 +43,59 @@ export default function Quality() {
     fetchBatches()
   }, [filterStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSetStatus = async (batch, newStatus) => {
-    setActingId(batch.id)
-    try {
-      const note = noteDrafts[batch.id] || ''
+const handleSetStatus = async (batch, newStatus) => {
+  setActingId(batch.id)
+  try {
+    const note = noteDrafts[batch.id] || ''
 
-      const { error: updateError } = await supabase
-        .from('batches')
-        .update({ quality_status: newStatus, quality_notes: note || null })
-        .eq('id', batch.id)
-      if (updateError) throw updateError
+    // Kalite onayı verilince Depo A'dan Depo B'ye taşı
+    const locationUpdate = newStatus === 'approved'
+      ? { quality_status: 'approved', quality_notes: note || null, location: 'depo_b', status: 'transferred' }
+      : { quality_status: newStatus, quality_notes: note || null }
 
-      const actionMap = {
-        approved:   'quality_approved',
-        rejected:   'quality_rejected',
-        quarantine: 'quality_quarantine',
-      }
+    const { error: updateError } = await supabase
+      .from('batches')
+      .update(locationUpdate)
+      .eq('id', batch.id)
+    if (updateError) throw updateError
 
-      await supabase.from('movements').insert({
-        batch_id: batch.id,
-        action: actionMap[newStatus],
-        from_location: batch.location,
-        to_location: batch.location,
-        quantity_kg: batch.remaining_kg,
-        performed_by: user?.email || 'sistem',
-        notes: note || QUALITY_LABELS[newStatus].label,
-      })
-
-      await log({
-        userId: user.id,
-        userEmail: user.email,
-        action: `Kalite durumu güncellendi: ${newStatus}`,
-        tableName: 'batches',
-        recordId: batch.id,
-        oldValues: { quality_status: batch.quality_status },
-        newValues: { quality_status: newStatus, quality_notes: note },
-      })
-
-      fetchBatches()
-    } catch (err) {
-      alert('Hata: ' + err.message)
-    } finally {
-      setActingId(null)
+    const actionMap = {
+      approved:   'quality_approved',
+      rejected:   'quality_rejected',
+      quarantine: 'quality_quarantine',
     }
+
+    await supabase.from('movements').insert({
+      batch_id: batch.id,
+      action: actionMap[newStatus],
+      from_location: batch.location,
+      to_location: newStatus === 'approved' ? 'depo_b' : batch.location,
+      quantity_kg: batch.remaining_kg,
+      performed_by: user?.email || 'sistem',
+      notes: note || (newStatus === 'approved'
+        ? 'Kalite onayı — Depo B\'ye transfer edildi'
+        : QUALITY_LABELS[newStatus].label),
+    })
+
+    await log({
+      userId: user.id,
+      userEmail: user.email,
+      action: newStatus === 'approved'
+        ? 'Kalite onayı verildi — Depo A → Depo B'
+        : `Kalite durumu güncellendi: ${newStatus}`,
+      tableName: 'batches',
+      recordId: batch.id,
+      oldValues: { quality_status: batch.quality_status, location: batch.location },
+      newValues: locationUpdate,
+    })
+
+    fetchBatches()
+  } catch (err) {
+    alert('Hata: ' + err.message)
+  } finally {
+    setActingId(null)
   }
+}
 
   const filters = [
     { key: 'pending',    label: '⏳ Bekleyen' },
