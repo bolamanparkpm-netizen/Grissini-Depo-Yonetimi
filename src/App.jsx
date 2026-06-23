@@ -12,16 +12,9 @@ import Quality from './pages/Quality'
 import ShiftReport from './pages/ShiftReport'
 import AdminPanel from './pages/AdminPanel'
 
-// ...
-<Route path="admin" element={<AdminPanel />} />
-
-// ...
-<Route path="shift-report" element={<ShiftReport />} />
-
 export default function App() {
   const { user, loading } = useAuth()
 
-  // Oturum kontrolü yapılıyor
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -36,23 +29,22 @@ export default function App() {
 
   return (
     <Routes>
-      {/* Giriş sayfası */}
       <Route
-        path="/Login"
+        path="/login"
         element={user ? <Navigate to="/" replace /> : <Login />}
       />
 
-      {/* Korumalı sayfalar — Layout içinde */}
       <Route element={<ProtectedRoute user={user}><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
-        <Route path="production" element={<Production />} />
-	<Route path="quality" element={<Quality />} />
-        <Route path="sales" element={<Sales />} />
-        <Route path="consumption" element={<Consumption />} />
-        <Route path="history" element={<History />} />
+        <Route path="production"   element={<Production />} />
+        <Route path="quality"      element={<Quality />} />
+        <Route path="sales"        element={<Sales />} />
+        <Route path="consumption"  element={<Consumption />} />
+        <Route path="history"      element={<History />} />
+        <Route path="shift-report" element={<ShiftReport />} />
+        <Route path="admin"        element={<AdminPanel />} />
       </Route>
 
-      {/* Bilinmeyen yolları ana sayfaya yönlendir */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

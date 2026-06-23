@@ -1,23 +1,11 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { useAuth } from '../hooks/useAuth'
-
-// Navigasyon menüsü tanımları
-const navItems = [
-  { to: '/',           icon: '📊', label: 'Genel Bakış' },
-  { to: '/production', icon: '🏭', label: 'Üretim' },
-  { to: '/quality',    icon: '🧪', label: 'Kalite' },
-  { to: '/sales',      icon: '🚚', label: 'Satış & Sevk' },
-  { to: '/consumption',icon: '✅', label: 'Tüketim' },
-  { to: '/history',    icon: '📋', label: 'Geçmiş' },
-  { to: '/shift-report', icon: '📈', label: 'Vardiya' },
-]
 
 export default function Layout() {
   const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
-  
-const allNavItems = [
+
+  const allNavItems = [
     { to: '/',             icon: '📊', label: 'Genel Bakış', roles: null },
     { to: '/production',   icon: '🏭', label: 'Üretim',      roles: null },
     { to: '/quality',      icon: '🧪', label: 'Kalite',      roles: null },
@@ -32,8 +20,6 @@ const allNavItems = [
   const navItems = allNavItems.filter(item =>
     !item.roles || item.roles.includes(profile?.role)
   )
-
-  // ... geri kalanı aynı
 
   const handleSignOut = async () => {
     await signOut()
@@ -53,6 +39,15 @@ const allNavItems = [
             <span className="text-amber-100 text-xs hidden sm:block">
               {user?.email}
             </span>
+            {profile?.role && (
+              <span className="text-amber-200 text-xs hidden sm:block">
+                {profile.role === 'admin'   ? '⚙️ Admin' :
+                 profile.role === 'mudur'   ? '👔 Müdür' :
+                 profile.role === 'kalite'  ? '🧪 Kalite' :
+                 profile.role === 'uretim'  ? '🏭 Üretim' :
+                 profile.role === 'depocu'  ? '📦 Depocu' : ''}
+              </span>
+            )}
             <button
               onClick={handleSignOut}
               className="text-amber-100 hover:text-white text-sm px-2 py-1
@@ -70,7 +65,7 @@ const allNavItems = [
         <Outlet />
       </main>
 
-      {/* Alt navigasyon — mobil öncelikli */}
+      {/* Alt navigasyon */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200
                       z-40 safe-area-inset-bottom">
         <div className="flex justify-around items-stretch h-16">
@@ -96,4 +91,4 @@ const allNavItems = [
       </nav>
     </div>
   )
-} 
+}
