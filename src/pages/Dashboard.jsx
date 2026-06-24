@@ -9,6 +9,9 @@ export default function Dashboard() {
   const [depoC, setDepoC] = useState([])
   const [karantina, setKarantina] = useState([])
   const [loading, setLoading] = useState(true)
+  const [sevkBekleyen, setSevkBekleyen] = useState([])
+  // fetchStock içinde:
+  setSevkBekleyen(data.filter(b => b.status === 'sevk_bekliyor'))
 
 const fetchStock = async () => {
   const { data, error } = await supabase
@@ -20,7 +23,10 @@ const fetchStock = async () => {
   if (error) { console.error(error); return }
 
   setDepoA(data.filter(b => b.location === 'depo_a'))
-  setDepoB(data.filter(b => b.location === 'depo_b'))
+	// Depo B — sadece transferred olanlar (sevk_bekliyor ayrı göster)
+  setDepoB(data.filter(b => b.location === 'depo_b' && b.status === 'transferred'))
+	// Sevk bekleyenler — Depo B'de ama satış emri verilmiş
+  const sevkBekleyen = data.filter(b => b.status === 'sevk_bekliyor')
   setDepoC(data.filter(b => b.location === 'depo_c'))
   setKarantina(data.filter(b => b.location === 'depo_karantina'))
 
@@ -113,6 +119,13 @@ const fetchStock = async () => {
           <p className="text-xl font-bold text-orange-900">{totalKarantina.toFixed(1)} kg</p>
           <p className="text-xs text-orange-600 mt-0.5">{karantina.length} parti</p>
         </div>
+ 	<div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-2">
+    	<p className="text-xs text-yellow-700 font-medium mb-1">⏳ Sevk Bekliyor</p>
+   	<p className="text-xl font-bold text-yellow-900">
+    	{sevkBekleyen.reduce((s, b) => s + parseFloat(b.remaining_kg || 0), 0).toFixed(1)} kg
+   	</p>
+    	<p className="text-xs text-yellow-600 mt-0.5">{sevkBekleyen.length} parti</p>
+  	</div>
       </div>
 
       <StockCard
