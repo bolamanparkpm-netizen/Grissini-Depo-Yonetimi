@@ -87,6 +87,53 @@ export default function Quality() {
         newStatus === 'quarantine' ? 'depo_karantina' :
         newStatus === 'rejected'   ? 'depo_karantina' : batch.location
 
+// İmha işlemi
+const handleImha = async (batch) => {
+  if (!window.confirm(
+    `"${batch.batch_no}" partisi imha edilecek!\n\n` +
+    `Miktar: ${batch.quantity_kg} kg\n` +
+    `Bu işlem geri alınamaz. Onaylıyor musunuz?`
+  )) return
+
+  setActingId(batch.id)
+  try {
+    const { error: updateError } = await supabase
+      .from('batches')
+      .update({
+        status: 'imha_edildi',
+        location: 'imha',
+        remaining_kg: 0,
+      })
+      .eq('id', batch.id)
+    if (updateError) throw updateError
+
+    await supabase.from('movements').insert({
+      batch_id: batch.id,
+      action: 'imha_edildi',
+      from_location: batch.location,
+      to_location: 'imha',
+      quantity_kg: batch.quantity_kg,
+      performed_by: user?.email || 'sistem',
+      notes: `İmha edildi — ${new Date().toLocaleString('tr-TR')}`,
+    })
+
+    await log({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'Parti imha edildi',
+      tableName: 'batches',
+      recordId: batch.id,
+      oldValues: { status: batch.status, location: batch.location },
+      newValues: { status: 'imha_edildi', location: 'imha', remaining_kg: 0 },
+    })
+
+    fetchBatches()
+  } catch (err) {
+    alert('Hata: ' + err.message)
+  } finally {
+    setActingId(null)
+  }
+}
       await supabase.from('movements').insert({
         batch_id: batch.id,
         action: actionMap[newStatus],
@@ -227,6 +274,18 @@ export default function Quality() {
                                  bg-red-50 text-red-700 hover:bg-red-100
                                  disabled:opacity-40 disabled:cursor-not-allowed"
                     >❌ Uygun Değil</button>
+ 			 {/* İmha butonu — sadece uygun değil veya karantinada olanlara */}
+			  {(batch.quality_status === 'rejected' || batch.quality_status === 'quarantine') && (
+   			 <button
+    			  onClick={() => handleImha(batch)}
+    			  disabled={isActing || batch.status === 'imha_edildi'}
+   			   className="w-full mt-2 py-2 rounded-lg text-xs font-semibold transition-colors
+   			              bg-gray-900 text-white hover:bg-black
+    			             disabled:opacity-40 disabled:cursor-not-allowed
+   			              flex items-center justify-center gap-1.5"
+  		  >
+  		    🗑️ İmha Et — Stoktan Kalıcı Sil
+  		  </button>
                   </div>
                 </RoleGuard>
               </div>

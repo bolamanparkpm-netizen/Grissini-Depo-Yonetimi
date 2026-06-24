@@ -11,6 +11,7 @@ const ACTION_LABELS = {
   quality_approved:   { label: 'Kalite Onayı',   color: 'bg-green-100 text-green-700',   icon: '✅' },
   quality_rejected:   { label: 'Kalite Red',     color: 'bg-red-100 text-red-700',       icon: '❌' },
   quality_quarantine: { label: 'Karantina',      color: 'bg-orange-100 text-orange-700', icon: '🔬' },
+  imha_edildi:        { label: 'İmha Edildi',    color: 'bg-gray-900 text-white',        icon: '🗑️' },
 }
 
 export default function History() {
