@@ -32,7 +32,7 @@ export default function Quality() {
     }
     const { data, error } = await query
     if (error) {
-      console.error('Kalite listesi yükleme hatası:', error)
+      console.error('Kalite listesi yukleme hatasi:', error)
     } else {
       setBatches(data || [])
     }
@@ -43,6 +43,7 @@ export default function Quality() {
     fetchBatches()
   }, [filterStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Kalite durumu guncelle
   const handleSetStatus = async (batch, newStatus) => {
     setActingId(batch.id)
     try {
@@ -51,23 +52,11 @@ export default function Quality() {
       let locationUpdate = { quality_status: newStatus, quality_notes: note || null }
 
       if (newStatus === 'approved') {
-        locationUpdate = {
-          ...locationUpdate,
-          location: 'depo_b',
-          status: 'transferred',
-        }
+        locationUpdate = { ...locationUpdate, location: 'depo_b', status: 'transferred' }
       } else if (newStatus === 'quarantine') {
-        locationUpdate = {
-          ...locationUpdate,
-          location: 'depo_karantina',
-          status: 'quarantine',
-        }
+        locationUpdate = { ...locationUpdate, location: 'depo_karantina', status: 'quarantine' }
       } else if (newStatus === 'rejected') {
-        locationUpdate = {
-          ...locationUpdate,
-          location: 'depo_karantina',
-          status: 'rejected',
-        }
+        locationUpdate = { ...locationUpdate, location: 'depo_karantina', status: 'rejected' }
       }
 
       const { error: updateError } = await supabase
@@ -87,53 +76,6 @@ export default function Quality() {
         newStatus === 'quarantine' ? 'depo_karantina' :
         newStatus === 'rejected'   ? 'depo_karantina' : batch.location
 
-// İmha işlemi
-const handleImha = async (batch) => {
-  if (!window.confirm(
-    `"${batch.batch_no}" partisi imha edilecek!\n\n` +
-    `Miktar: ${batch.quantity_kg} kg\n` +
-    `Bu işlem geri alınamaz. Onaylıyor musunuz?`
-  )) return
-
-  setActingId(batch.id)
-  try {
-    const { error: updateError } = await supabase
-      .from('batches')
-      .update({
-        status: 'imha_edildi',
-        location: 'imha',
-        remaining_kg: 0,
-      })
-      .eq('id', batch.id)
-    if (updateError) throw updateError
-
-    await supabase.from('movements').insert({
-      batch_id: batch.id,
-      action: 'imha_edildi',
-      from_location: batch.location,
-      to_location: 'imha',
-      quantity_kg: batch.quantity_kg,
-      performed_by: user?.email || 'sistem',
-      notes: `İmha edildi — ${new Date().toLocaleString('tr-TR')}`,
-    })
-
-    await log({
-      userId: user.id,
-      userEmail: user.email,
-      action: 'Parti imha edildi',
-      tableName: 'batches',
-      recordId: batch.id,
-      oldValues: { status: batch.status, location: batch.location },
-      newValues: { status: 'imha_edildi', location: 'imha', remaining_kg: 0 },
-    })
-
-    fetchBatches()
-  } catch (err) {
-    alert('Hata: ' + err.message)
-  } finally {
-    setActingId(null)
-  }
-}
       await supabase.from('movements').insert({
         batch_id: batch.id,
         action: actionMap[newStatus],
@@ -142,9 +84,9 @@ const handleImha = async (batch) => {
         quantity_kg: batch.remaining_kg,
         performed_by: user?.email || 'sistem',
         notes: note || (
-          newStatus === 'approved'   ? "Kalite onayı — Depo B'ye transfer" :
-          newStatus === 'quarantine' ? 'Karantinaya alındı' :
-                                       "Reddedildi — Karantina deposuna alındı"
+          newStatus === 'approved'   ? "Kalite onayi — Depo B'ye transfer" :
+          newStatus === 'quarantine' ? 'Karantinaya alindi' :
+                                       'Reddedildi — Karantina deposuna alindi'
         ),
       })
 
@@ -166,12 +108,60 @@ const handleImha = async (batch) => {
     }
   }
 
+  // Imha islemi
+  const handleImha = async (batch) => {
+    if (!window.confirm(
+      `"${batch.batch_no}" partisi imha edilecek!\n\n` +
+      `Miktar: ${batch.quantity_kg} kg\n` +
+      `Bu islem geri alinamaz. Onayliyor musunuz?`
+    )) return
+
+    setActingId(batch.id)
+    try {
+      const { error: updateError } = await supabase
+        .from('batches')
+        .update({
+          status: 'imha_edildi',
+          location: 'imha',
+          remaining_kg: 0,
+        })
+        .eq('id', batch.id)
+      if (updateError) throw updateError
+
+      await supabase.from('movements').insert({
+        batch_id: batch.id,
+        action: 'imha_edildi',
+        from_location: batch.location,
+        to_location: 'imha',
+        quantity_kg: batch.quantity_kg,
+        performed_by: user?.email || 'sistem',
+        notes: `Imha edildi — ${new Date().toLocaleString('tr-TR')}`,
+      })
+
+      await log({
+        userId: user.id,
+        userEmail: user.email,
+        action: 'Parti imha edildi',
+        tableName: 'batches',
+        recordId: batch.id,
+        oldValues: { status: batch.status, location: batch.location },
+        newValues: { status: 'imha_edildi', location: 'imha', remaining_kg: 0 },
+      })
+
+      fetchBatches()
+    } catch (err) {
+      alert('Hata: ' + err.message)
+    } finally {
+      setActingId(null)
+    }
+  }
+
   const filters = [
     { key: 'pending',    label: '⏳ Bekleyen' },
     { key: 'quarantine', label: '🔬 Karantina' },
     { key: 'approved',   label: '✅ Uygun' },
     { key: 'rejected',   label: '❌ Uygun Değil' },
-    { key: 'all',        label: 'Tümü' },
+    { key: 'all',        label: 'Tumu' },
   ]
 
   return (
@@ -204,7 +194,7 @@ const handleImha = async (batch) => {
       {!loading && batches.length === 0 && (
         <div className="text-center py-12 text-gray-400">
           <p className="text-4xl mb-3">📭</p>
-          <p>Bu kategoride parti bulunamadı</p>
+          <p>Bu kategoride parti bulunamadi</p>
         </div>
       )}
 
@@ -227,6 +217,7 @@ const handleImha = async (batch) => {
                          batch.location === 'depo_b'         ? 'Depo B' :
                          batch.location === 'depo_c'         ? 'Depo C' :
                          batch.location === 'depo_karantina' ? 'Karantina' :
+                         batch.location === 'imha'           ? 'Imha Edildi' :
                          batch.location}
                     </p>
                   </div>
@@ -242,52 +233,69 @@ const handleImha = async (batch) => {
                   </p>
                 )}
 
-                <input
-                  type="text"
-                  placeholder="Not ekle (opsiyonel — örn: Lab raporu no, sebep...)"
-                  value={noteDrafts[batch.id] ?? ''}
-                  onChange={(e) => setNoteDrafts({ ...noteDrafts, [batch.id]: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3
-                             focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
+                {/* Imha edilmisse input ve butonlar gosterme */}
+                {batch.status !== 'imha_edildi' && (
+                  <>
+                    <input
+                      type="text"
+                      placeholder="Not ekle (opsiyonel)"
+                      value={noteDrafts[batch.id] ?? ''}
+                      onChange={(e) => setNoteDrafts({ ...noteDrafts, [batch.id]: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3
+                                 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
 
-                <RoleGuard allowed={canEdit('quality')}>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      onClick={() => handleSetStatus(batch, 'approved')}
-                      disabled={isActing || batch.quality_status === 'approved'}
-                      className="py-2 rounded-lg text-xs font-semibold transition-colors
-                                 bg-green-50 text-green-700 hover:bg-green-100
-                                 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >✅ Uygun</button>
-                    <button
-                      onClick={() => handleSetStatus(batch, 'quarantine')}
-                      disabled={isActing || batch.quality_status === 'quarantine'}
-                      className="py-2 rounded-lg text-xs font-semibold transition-colors
-                                 bg-orange-50 text-orange-700 hover:bg-orange-100
-                                 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >🔬 Karantina</button>
-                    <button
-                      onClick={() => handleSetStatus(batch, 'rejected')}
-                      disabled={isActing || batch.quality_status === 'rejected'}
-                      className="py-2 rounded-lg text-xs font-semibold transition-colors
-                                 bg-red-50 text-red-700 hover:bg-red-100
-                                 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >❌ Uygun Değil</button>
- 			 {/* İmha butonu — sadece uygun değil veya karantinada olanlara */}
-			  {(batch.quality_status === 'rejected' || batch.quality_status === 'quarantine') && (
-   			 <button
-    			  onClick={() => handleImha(batch)}
-    			  disabled={isActing || batch.status === 'imha_edildi'}
-   			   className="w-full mt-2 py-2 rounded-lg text-xs font-semibold transition-colors
-   			              bg-gray-900 text-white hover:bg-black
-    			             disabled:opacity-40 disabled:cursor-not-allowed
-   			              flex items-center justify-center gap-1.5"
-  		  >
-  		    🗑️ İmha Et — Stoktan Kalıcı Sil
-  		  </button>
+                    <RoleGuard allowed={canEdit('quality')}>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => handleSetStatus(batch, 'approved')}
+                          disabled={isActing || batch.quality_status === 'approved'}
+                          className="py-2 rounded-lg text-xs font-semibold transition-colors
+                                     bg-green-50 text-green-700 hover:bg-green-100
+                                     disabled:opacity-40 disabled:cursor-not-allowed"
+                        >✅ Uygun</button>
+                        <button
+                          onClick={() => handleSetStatus(batch, 'quarantine')}
+                          disabled={isActing || batch.quality_status === 'quarantine'}
+                          className="py-2 rounded-lg text-xs font-semibold transition-colors
+                                     bg-orange-50 text-orange-700 hover:bg-orange-100
+                                     disabled:opacity-40 disabled:cursor-not-allowed"
+                        >🔬 Karantina</button>
+                        <button
+                          onClick={() => handleSetStatus(batch, 'rejected')}
+                          disabled={isActing || batch.quality_status === 'rejected'}
+                          className="py-2 rounded-lg text-xs font-semibold transition-colors
+                                     bg-red-50 text-red-700 hover:bg-red-100
+                                     disabled:opacity-40 disabled:cursor-not-allowed"
+                        >❌ Uygun Degil</button>
+                      </div>
+
+                      {/* Imha butonu — sadece red veya karantinada olanlara */}
+                      {(batch.quality_status === 'rejected' ||
+                        batch.quality_status === 'quarantine') && (
+                        <button
+                          onClick={() => handleImha(batch)}
+                          disabled={isActing}
+                          className="w-full mt-2 py-2.5 rounded-lg text-xs font-semibold
+                                     bg-gray-900 text-white hover:bg-black transition-colors
+                                     disabled:opacity-40 disabled:cursor-not-allowed
+                                     flex items-center justify-center gap-1.5"
+                        >
+                          🗑️ Imha Et — Stoktan Kalici Sil
+                        </button>
+                      )}
+                    </RoleGuard>
+                  </>
+                )}
+
+                {/* Imha edildi rozeti */}
+                {batch.status === 'imha_edildi' && (
+                  <div className="bg-gray-100 rounded-lg px-3 py-2 text-center">
+                    <p className="text-xs text-gray-500 font-medium">
+                      🗑️ Bu parti imha edilmistir
+                    </p>
                   </div>
-                </RoleGuard>
+                )}
               </div>
             )
           })}
